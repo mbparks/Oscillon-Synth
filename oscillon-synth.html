@@ -741,7 +741,7 @@ revealzone.addEventListener('pointerenter',revealDock);
 revealzone.addEventListener('pointerdown',revealDock);
 window.addEventListener('pointerdown',()=>{interacting=true;revealDock();});
 window.addEventListener('pointerup',()=>{interacting=false;resetIdle();});
-window.addEventListener('keydown',revealDock);
+window.addEventListener('keydown',e=>{ if(KEYMAP[e.key.toLowerCase()]==null) revealDock(); });
 window.addEventListener('pointermove',e=>{
   if(dock.classList.contains('hidden')){if(e.clientY>window.innerHeight-120)revealDock();}
   else resetIdle();});
