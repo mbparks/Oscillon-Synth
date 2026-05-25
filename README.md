@@ -26,7 +26,7 @@ Everything lives in one HTML file. There is no build step, no dependencies, and 
 
 ### Inputs
 - **Microphone.** Live voice or instrument input that feeds the filter, echo, light show, and recorder. A separate Monitor switch (off by default) guards against feedback.
-- **Audio file.** Upload any audio file the browser can decode. It plays through the filter and echo, so you can filter-sweep and drench an existing track and watch it drive the visuals. Supports looping and level control.
+- **Audio file.** Upload any audio file the browser can decode. It plays through the full processing chain (filter, LFO, tremolo, and echo), so you can filter-sweep, add vibrato or wobble, and drench an existing track in tape echo while it drives the visuals. A granular playback engine provides independent Speed and Pitch controls: Speed sets tempo from 0.25x to 4x, and Pitch shifts up or down a full octave without changing the tempo. The file also appears in the X-Y Lissajous display alongside the synth. Supports looping and level control.
 
 ### Output
 - **Performance recorder.** Capture your whole session (oscillators, keyer, microphone, and the loaded file, with all processing baked in) to a downloadable audio file. The recording matches what the light show reacts to.
@@ -81,7 +81,7 @@ Then open `http://localhost:8000/oscillon-synth.html`.
 | Tone & Out | Volume | Master output level |
 | Echo Tank | Time / Feedbk / Mix | Tape-echo delay parameters |
 | Voice In | Mic / Monitor / Level | Microphone input, speaker monitor, and level |
-| Audio File | Source / Transport / Loop / Level | Load, play/stop, loop, and level for an uploaded file |
+| Audio File | Source / Transport / Loop / Speed / Pitch / Level | Load, play/stop, loop, tempo (0.25x-4x), independent pitch (+/- 1 octave), and level |
 | Recorder | Capture | Start/stop recording and download the result |
 | Screen | Mode | Display mode |
 | Screen | Palette | Color scheme |

@@ -1,10 +1,30 @@
 <!DOCTYPE html>
-<!-- OSCILLON by M.B. Parks — Light & Tone Console · Model 7 · v0.0.2 -->
+<!-- OSCILLON by M.B. Parks — Light & Tone Console · Model 7 · v0.0.3
+=====================================================================
+  CHANGELOG
+  v0.0.3  Audio file upload (filtered, echoed, LFO/tremolo-modulated,
+          shown in the X-Y display) + performance recorder with
+          downloadable export. Granular file engine giving independent
+          Speed (tempo) and Pitch (+/- one octave) controls. Internal
+          mix bus so the scope, the recording, and the speaker output
+          stay consistent. Fixed an LFO tap shared between tremolo and
+          pitch/filter modulation; tremolo now has its own tap.
+  v0.0.2  ADSR envelope, tape echo tank, sub-oscillator + noise, HP/BP
+          filter modes; level-reactive beam/trails, STAR/ROSE/FALL
+          display modes, pitch+timbre color; CRT jitter, Shift fine-
+          adjust, right-click reset; patch slots, shareable URL-hash
+          links, randomize; downloadable patch files; color palettes,
+          grid/text/LED toggles + one-tap clean-screen; microphone input;
+          show rescales to the open control dock.
+  v0.0.1  Full-screen light show with bottom control dock that auto-
+          hides when idle. Two oscillators, lowpass filter, LFO, keyer.
+=====================================================================
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>OSCILLON by M.B. Parks — Light & Tone Console · v0.0.2</title>
+<title>OSCILLON by M.B. Parks — Light & Tone Console · v0.0.3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&family=Saira+Condensed:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
@@ -171,7 +191,7 @@
   <div class="show">
     <canvas id="scope"></canvas>
     <div class="scan"></div><div class="vig"></div><div class="glass"></div>
-    <div class="ovl marque"><div class="name">OSCILLON<span class="by">by M.B. Parks</span></div><div class="sub">Light &amp; Tone Console · Model 7 · v0.0.2</div></div>
+    <div class="ovl marque"><div class="name">OSCILLON<span class="by">by M.B. Parks</span></div><div class="sub">Light &amp; Tone Console · Model 7 · v0.0.3</div></div>
     <div class="ovl status" id="status">— STANDBY —</div>
     <div class="ovl lamps">
       <div class="lampwrap"><div class="jewel amber" id="lampPwr"></div><span>Pwr</span></div>
@@ -219,18 +239,18 @@ const S={
   filterMode:0, timbre:.62, reso:.20, vol:.55,
   dlyTime:.30, dlyFb:.35, dlyMix:0,
   mic:false, micMon:false, micGain:.6,
-  fileLevel:.7, fileLoop:true,
+  fileLevel:.7, fileLoop:true, fileRate:.5, filePitch:.5,
   scopeMode:1, palette:0, grid:true, text:true, leds:true, clean:false, hue:135
 };
 /* order used for share-link encoding (power excluded on purpose) */
 const ENC=['drone','tremolo','tuneA','tuneB','waveA','waveB','sub','noise',
   'atk','dec','sus','rel','lfoRate','modDepth','modRoute','filterMode',
-  'timbre','reso','vol','dlyTime','dlyFb','dlyMix','micGain','fileLevel','fileLoop','scopeMode','palette','grid','text','leds'];
+  'timbre','reso','vol','dlyTime','dlyFb','dlyMix','micGain','fileLevel','fileLoop','fileRate','filePitch','scopeMode','palette','grid','text','leds'];
 
 let AC=null,oscA,oscB,oscSub,noiseSrc,gA,gB,gSub,gNoise,mix,filt,trem,ampEnv,
-    master,anaMaster,anaA,anaB,lfo,lfoGain,delay,fbFilter,fb,wet,dry,
+    master,anaMaster,anaA,anaB,lfo,lfoGain,lfoTrem,delay,fbFilter,fb,wet,dry,
     micStream,micSrc,micGainNode,micFilt,micMonGain,
-    visBus,recDest,fileGainNode,fileFilt;
+    visBus,recDest,fileGainNode,fileFilt,fileTrem;
 let started=false,gateOpen=false,curFreq=0;
 const activeNotes=new Map();             // id -> frequency (insertion order = priority)
 const WAVES=['sine','triangle','square','sawtooth'];
@@ -255,6 +275,7 @@ const noteHz=m=>440*Math.pow(2,(m-69)/12);
 const atkT=()=>0.004+S.atk*S.atk*3;
 const decT=()=>0.01+S.dec*S.dec*3;
 const relT=()=>0.02+S.rel*S.rel*4.5;
+const fRate=v=>0.25*Math.pow(2,v*4);   // 0.25x .. 4x, v=0.5 -> 1.0x
 const NOTES=[60,62,64,67,69,72,74,76];
 const KEYMAP={a:0,s:1,d:2,f:3,g:4,h:5,j:6,k:7};
 curFreq=fA(S.tuneA);
@@ -288,7 +309,8 @@ function buildGraph(){
   ampEnv.connect(delay);                   // echo send
   delay.connect(wet); wet.connect(master); // wet return
   delay.connect(fbFilter); fbFilter.connect(fb); fb.connect(delay); // feedback loop
-  lfo.connect(lfoGain);
+  lfo.connect(lfoGain);                  // routable modulation tap (pitch or filter)
+  lfoTrem=AC.createGain(); lfo.connect(lfoTrem); // independent tremolo tap
 
   // visBus = the full audible mix that drives the light show AND the recorder.
   // spkBus path is just AC.destination; recDest is a MediaStreamDestination tapped for recording.
@@ -305,14 +327,18 @@ function buildGraph(){
   micGainNode.connect(micFilt);
   micFilt.connect(visBus);             // light show + recording always react to voice
   micFilt.connect(delay);              // voice through the echo tank
+  micFilt.connect(anaA); micFilt.connect(anaB); // voice participates in X-Y figure
   micFilt.connect(micMonGain); micMonGain.connect(AC.destination); // optional speaker monitor
 
-  // audio file player: fileNode -> fileGainNode -> fileFilt -> speakers + scope + echo.
-  // fileFilt tracks the Tone controls so the uploaded audio gets sculpted too.
+  // audio file player: granular grains -> fileGainNode -> fileFilt -> fileTrem -> speakers + scope + echo.
+  // fileFilt tracks the Tone controls and the LFO; fileTrem carries the tremolo so the file
+  // gets the same filter/vibrato/wobble/tremolo treatment as the synth voices.
   fileGainNode=AC.createGain(); fileGainNode.gain.value=0;
   fileFilt=AC.createBiquadFilter(); fileFilt.type='lowpass'; fileFilt.frequency.value=20000;
-  fileGainNode.connect(fileFilt);
-  fileFilt.connect(AC.destination); fileFilt.connect(visBus); fileFilt.connect(delay);
+  fileTrem=AC.createGain(); fileTrem.gain.value=1;
+  fileGainNode.connect(fileFilt); fileFilt.connect(fileTrem);
+  fileTrem.connect(AC.destination); fileTrem.connect(visBus); fileTrem.connect(delay);
+  fileGainNode.connect(anaA); fileTrem.connect(anaB); // pre/post-filter taps open up the X-Y figure
 
   oscA.start(); oscB.start(); oscSub.start(); noiseSrc.start(); lfo.start();
   started=true; applyAll(); syncDrone();
@@ -337,13 +363,30 @@ function applyBody(){
 function applyMod(){
   if(!started) return;
   lfo.frequency.setTargetAtTime(fLFO(S.lfoRate),AC.currentTime,.05);
+
+  // --- routable modulation (pitch or filter), independent of tremolo ---
   try{lfoGain.disconnect();}catch(e){}
+  if(S.modRoute===1){           // pitch / vibrato (cents)
+    lfoGain.gain.value=curFreq*0.06*S.modDepth+2;
+    lfoGain.connect(oscA.detune); lfoGain.connect(oscB.detune); lfoGain.connect(oscSub.detune);
+    // (file vibrato is applied per-grain in the granular engine, not via this node)
+  } else if(S.modRoute===2){    // filter wobble (Hz)
+    lfoGain.gain.value=fCut(S.timbre)*0.9*S.modDepth;
+    lfoGain.connect(filt.frequency);
+    if(fileFilt) lfoGain.connect(fileFilt.frequency);  // file filter wobbles too
+  }
+
+  // --- tremolo (separate tap so it never fights the routable modulation) ---
+  try{lfoTrem.disconnect();}catch(e){}
   trem.gain.cancelScheduledValues(AC.currentTime);
-  if(S.tremolo){ trem.gain.value=1-0.5*S.modDepth; lfoGain.gain.value=0.5*S.modDepth; lfoGain.connect(trem.gain); }
-  else { trem.gain.value=1; }
-  if(S.modRoute===1){ lfoGain.gain.value=curFreq*0.06*S.modDepth+2;
-    lfoGain.connect(oscA.detune); lfoGain.connect(oscB.detune); lfoGain.connect(oscSub.detune); }
-  else if(S.modRoute===2){ lfoGain.gain.value=fCut(S.timbre)*0.9*S.modDepth; lfoGain.connect(filt.frequency); }
+  if(fileTrem) fileTrem.gain.cancelScheduledValues(AC.currentTime);
+  if(S.tremolo){
+    const d=0.5*S.modDepth;
+    trem.gain.value=1-d; lfoTrem.gain.value=d; lfoTrem.connect(trem.gain);
+    if(fileTrem){ fileTrem.gain.value=1-d; lfoTrem.connect(fileTrem.gain); }  // file tremolos too
+  } else {
+    trem.gain.value=1; if(fileTrem) fileTrem.gain.value=1;
+  }
 }
 function applyFilter(){
   if(!started) return;
@@ -389,8 +432,14 @@ function disableMic(){ applyMic(); flash('MIC OFF'); }
 function toggleMic(){ if(S.mic) enableMic(); else disableMic(); }
 
 /* ---------- uploaded audio file player ---------- */
-let fileBuf=null,fileNode=null,filePlaying=false,fileName='';
+let fileBuf=null,filePlaying=false,fileName='';
 let playBtn=null,recBtn=null;
+/* granular time/pitch engine: tempo = how fast readPos advances; pitch = per-grain rate.
+   This decouples Speed (tempo) from Pitch, which a single buffer source cannot do. */
+let grainTimer=null,readPos=0,nextGrainTime=0,endPending=false;
+const GRAIN=0.12, OVERLAP=2, HOP=GRAIN/OVERLAP;   // 50% overlap, triangular window = clean at unity
+const fileRatio=()=>fRate(S.fileRate);            // tempo multiplier
+const filePitchRatio=()=>Math.pow(2,(S.filePitch-0.5)*2); // +/- one octave, v=0.5 -> unity
 function applyFile(){ if(fileGainNode) fileGainNode.gain.setTargetAtTime(S.fileLevel*1.2, AC.currentTime,.04); }
 function updateFileBtn(){ if(!playBtn) return;
   playBtn.textContent=filePlaying?'STOP':'PLAY';
@@ -408,16 +457,44 @@ audioFileInput.addEventListener('change',ev=>{
   audioFileInput.value='';
 });
 function loadAudioFile(){ if(!started){flash('POWER ON FIRST');return;} audioFileInput.click(); }
+function spawnGrain(when){
+  const g=AC.createBufferSource(); g.buffer=fileBuf;
+  let ratio=filePitchRatio();
+  if(S.modRoute===1){ ratio*=(1+Math.sin(when*TAU*fLFO(S.lfoRate))*0.03*S.modDepth); } // vibrato
+  g.playbackRate.value=ratio;
+  const env=AC.createGain(); g.connect(env); env.connect(fileGainNode);
+  env.gain.setValueAtTime(0,when);
+  env.gain.linearRampToValueAtTime(1,when+GRAIN/2);
+  env.gain.linearRampToValueAtTime(0,when+GRAIN);
+  const off=Math.max(0,Math.min(readPos,fileBuf.duration-0.001));
+  try{ g.start(when,off); g.stop(when+GRAIN+0.02); }catch(e){}
+  g.onended=()=>{ try{g.disconnect();env.disconnect();}catch(e){} };
+}
+function grainTick(){
+  if(!filePlaying||!fileBuf){ return; }
+  if(!AC||AC.state!=='running'){ grainTimer=setTimeout(grainTick,80); return; } // paused while suspended
+  if(nextGrainTime < AC.currentTime-0.2) nextGrainTime=AC.currentTime+0.02; // resync after a pause
+  const ahead=0.1;
+  while(nextGrainTime<AC.currentTime+ahead){
+    spawnGrain(nextGrainTime);
+    nextGrainTime+=HOP;
+    readPos+=HOP*fileRatio();
+    if(readPos>=fileBuf.duration){
+      if(S.fileLoop){ readPos-=fileBuf.duration; }
+      else { endPending=true; break; }
+    }
+  }
+  if(endPending){ setTimeout(()=>{ if(endPending) stopFile(); }, (GRAIN+0.05)*1000); return; }
+  grainTimer=setTimeout(grainTick,25);
+}
 function playFile(){
   if(!fileBuf){ flash('NO FILE LOADED'); return; }
   stopFile();
-  fileNode=AC.createBufferSource(); fileNode.buffer=fileBuf; fileNode.loop=S.fileLoop;
-  fileNode.connect(fileGainNode);
-  fileNode.onended=()=>{ if(!S.fileLoop){ filePlaying=false; fileNode=null; updateFileBtn(); } };
-  applyFile(); fileNode.start(); filePlaying=true; updateFileBtn(); flash('FILE PLAYING');
+  readPos=0; endPending=false; nextGrainTime=AC.currentTime+0.05;
+  filePlaying=true; applyFile(); updateFileBtn(); grainTick(); flash('FILE PLAYING');
 }
-function stopFile(){ if(fileNode){ try{ fileNode.onended=null; fileNode.stop(); }catch(e){} fileNode=null; }
-  filePlaying=false; updateFileBtn(); }
+function stopFile(){ filePlaying=false; endPending=false;
+  if(grainTimer){ clearTimeout(grainTimer); grainTimer=null; } updateFileBtn(); }
 function toggleFile(){ filePlaying?stopFile():playFile(); }
 
 /* ---------- performance recorder ---------- */
@@ -618,7 +695,9 @@ $('#cMic').append(
 $('#cFile').append(
   makeButton({label:'Source',text:'LOAD',title:'Upload an audio file',on:loadAudioFile}),
   makeButton({label:'Transport',text:'PLAY',title:'Play / stop the loaded file',on:toggleFile,ref:b=>playBtn=b}),
-  makeToggle({label:'Loop',key:'fileLoop',on:()=>{ if(fileNode) fileNode.loop=S.fileLoop; }}),
+  makeToggle({label:'Loop',key:'fileLoop',on:()=>{}}),
+  makeKnob({label:'Speed',key:'fileRate',def:.5,on:()=>{},fmt:v=>fRate(v).toFixed(2)+'x'}),
+  makeKnob({label:'Pitch',key:'filePitch',def:.5,on:()=>{},fmt:v=>{const st=Math.round((v-0.5)*24);return (st>0?'+':'')+st+'st';}}),
   makeKnob({label:'Level',key:'fileLevel',def:.7,on:applyFile,fmt:v=>(v*100|0)+'%'}));
 $('#cRec').append(
   makeButton({label:'Capture',text:'REC',cls:'accent',title:'Record your performance to a file',on:toggleRec,ref:b=>recBtn=b}));
@@ -685,7 +764,7 @@ function shareLink(){
 
 /* ---- downloadable local patch file (.json) ---- */
 function savePatchFile(){
-  const data={app:'OSCILLON',by:'M.B. Parks',version:'0.0.2',saved:new Date().toISOString(),patch:snapshot()};
+  const data={app:'OSCILLON',by:'M.B. Parks',version:'0.0.3',saved:new Date().toISOString(),patch:snapshot()};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob), a=document.createElement('a');
   const stamp=new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
