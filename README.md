@@ -16,6 +16,7 @@ Everything lives in one HTML file. There is no build step, no dependencies, and 
 - LFO routable to pitch (vibrato) or filter (wobble), plus an amplitude tremolo switch.
 - Tape-style echo tank with adjustable time, feedback, and mix, and a darkening lowpass in the feedback path.
 - Monophonic keyer (on-screen or computer keyboard) with last-note priority.
+- Three-channel mix with a shared fader curve, so the synth, microphone, and audio file balance against each other predictably, plus a master Output that scales the whole blend (sound, light show, and recording together).
 
 ### Light show
 - Full-screen CRT scope with phosphor persistence, scanlines, vignette, and a subtle analog beam jitter.
@@ -78,7 +79,7 @@ Then open `http://localhost:8000/oscillon-synth.html`.
 | Modulation | Trem | Amplitude tremolo |
 | Tone & Out | Filter | Filter mode (LP, HP, BP) |
 | Tone & Out | Timbre / Reso | Filter cutoff and resonance |
-| Tone & Out | Volume | Master output level |
+| Tone & Out | Synth / Output | Synth channel level and master output (scales sound, light, and recording) |
 | Echo Tank | Time / Feedbk / Mix | Tape-echo delay parameters |
 | Voice In | Mic / Monitor / Level | Microphone input, speaker monitor, and level |
 | Audio File | Source / Transport / Loop / Speed / Pitch / Level | Load, play/stop, loop, tempo (0.25x-4x), independent pitch (+/- 1 octave), and level |

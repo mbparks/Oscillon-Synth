@@ -1,7 +1,11 @@
 <!DOCTYPE html>
-<!-- OSCILLON by M.B. Parks — Light & Tone Console · Model 7 · v0.0.3
+<!-- OSCILLON by M.B. Parks — Light & Tone Console · Model 7 · v0.0.4
 =====================================================================
   CHANGELOG
+  v0.0.4  Matched 3-channel mix: synth, mic, and file now share one
+          fader curve so equal knob positions sound equal. Added a
+          master Output knob that scales sound, light show, and
+          recording together. WAV export (replacing webm).
   v0.0.3  Audio file upload (filtered, echoed, LFO/tremolo-modulated,
           shown in the X-Y display) + performance recorder with
           downloadable export. Granular file engine giving independent
@@ -25,7 +29,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>OSCILLON by M.B. Parks — Light & Tone Console · v0.0.3</title>
+<title>OSCILLON by M.B. Parks — Light & Tone Console · v0.0.4</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&family=Saira+Condensed:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
@@ -192,7 +196,7 @@
   <div class="show">
     <canvas id="scope"></canvas>
     <div class="scan"></div><div class="vig"></div><div class="glass"></div>
-    <div class="ovl marque"><div class="name">OSCILLON<span class="by">by M.B. Parks</span></div><div class="sub">Light &amp; Tone Console · Model 7 · v0.0.3</div></div>
+    <div class="ovl marque"><div class="name">OSCILLON<span class="by">by M.B. Parks</span></div><div class="sub">Light &amp; Tone Console · Model 7 · v0.0.4</div></div>
     <div class="ovl status" id="status">— STANDBY —</div>
     <div class="ovl lamps">
       <div class="lampwrap"><div class="jewel amber" id="lampPwr"></div><span>Pwr</span></div>
@@ -237,21 +241,21 @@ const S={
   sub:0, noise:0,
   atk:.08, dec:.30, sus:.80, rel:.35,
   lfoRate:.30, modDepth:.35, modRoute:1,
-  filterMode:0, timbre:.62, reso:.20, vol:.55,
+  filterMode:0, timbre:.62, reso:.20, vol:.62, masterOut:.8,
   dlyTime:.30, dlyFb:.35, dlyMix:0,
-  mic:false, micMon:false, micGain:.6,
-  fileLevel:.7, fileLoop:true, fileRate:.5, filePitch:.5,
+  mic:false, micMon:false, micGain:.55,
+  fileLevel:.62, fileLoop:true, fileRate:.5, filePitch:.5,
   scopeMode:1, palette:0, grid:true, text:true, leds:true, clean:false, hue:135
 };
 /* order used for share-link encoding (power excluded on purpose) */
 const ENC=['drone','tremolo','tuneA','tuneB','waveA','waveB','sub','noise',
   'atk','dec','sus','rel','lfoRate','modDepth','modRoute','filterMode',
-  'timbre','reso','vol','dlyTime','dlyFb','dlyMix','micGain','fileLevel','fileLoop','fileRate','filePitch','scopeMode','palette','grid','text','leds'];
+  'timbre','reso','vol','masterOut','dlyTime','dlyFb','dlyMix','micGain','fileLevel','fileLoop','fileRate','filePitch','scopeMode','palette','grid','text','leds'];
 
 let AC=null,oscA,oscB,oscSub,noiseSrc,gA,gB,gSub,gNoise,mix,filt,trem,ampEnv,
     master,anaMaster,anaA,anaB,lfo,lfoGain,lfoTrem,delay,fbFilter,fb,wet,dry,
     micStream,micSrc,micGainNode,micFilt,micMonGain,
-    visBus,fileGainNode,fileFilt,fileTrem;
+    visBus,outBus,spkBus,fileGainNode,fileFilt,fileTrem;
 let started=false,gateOpen=false,curFreq=0;
 const activeNotes=new Map();             // id -> frequency (insertion order = priority)
 const WAVES=['sine','triangle','square','sawtooth'];
@@ -277,6 +281,7 @@ const atkT=()=>0.004+S.atk*S.atk*3;
 const decT=()=>0.01+S.dec*S.dec*3;
 const relT=()=>0.02+S.rel*S.rel*4.5;
 const fRate=v=>0.25*Math.pow(2,v*4);   // 0.25x .. 4x, v=0.5 -> 1.0x
+const mixG=v=>Math.pow(v,1.5);          // shared fader curve for the 3-channel mix (synth/mic/file)
 const NOTES=[60,62,64,67,69,72,74,76];
 const KEYMAP={a:0,s:1,d:2,f:3,g:4,h:5,j:6,k:7};
 curFreq=fA(S.tuneA);
@@ -313,37 +318,45 @@ function buildGraph(){
   lfo.connect(lfoGain);                  // routable modulation tap (pitch or filter)
   lfoTrem=AC.createGain(); lfo.connect(lfoTrem); // independent tremolo tap
 
-  // visBus = the full audible mix that drives the light show AND the WAV recorder tap.
+  // Master output topology:
+  //  visBus -> scope + WAV recorder. Hears EVERYTHING (synth, file, mic).
+  //  spkBus -> speakers. Hears synth + file, plus mic ONLY when monitoring (feedback guard).
+  //  outBus = master Output knob. BOTH buses pass through it, so one knob scales
+  //           what you hear, what the light show sees, and what you record, together.
+  outBus=AC.createGain();
   visBus=AC.createGain();
-  visBus.connect(anaMaster);
-  master.connect(AC.destination); master.connect(visBus);
+  spkBus=AC.createGain();
+  visBus.connect(outBus); spkBus.connect(outBus);
+  outBus.connect(AC.destination);       // speakers, scaled by master Output
+  outBus.connect(anaMaster);            // scope + recorder tap, same post-master signal
+  master.connect(spkBus);               // synth -> speakers (and via outBus -> scope/recorder)
 
-  // microphone path: mic -> micGainNode -> micFilt. Reaches the scope/recorder always,
-  // but only reaches the speakers via micMonGain when Monitor is on (feedback guard).
+  // microphone path: mic -> micGainNode -> micFilt. Always reaches the scope/recorder (visBus),
+  // reaches the speakers only via micMonGain -> spkBus when Monitor is on (feedback guard).
   micGainNode=AC.createGain(); micGainNode.gain.value=0;
   micFilt=AC.createBiquadFilter(); micFilt.type='lowpass'; micFilt.frequency.value=12000;
   micMonGain=AC.createGain(); micMonGain.gain.value=0;
   micGainNode.connect(micFilt);
-  micFilt.connect(visBus);             // light show + recording always react to voice
-  micFilt.connect(delay);              // voice through the echo tank
+  micFilt.connect(visBus);              // light show + recording always react to voice
+  micFilt.connect(delay);               // voice through the echo tank
   micFilt.connect(anaA); micFilt.connect(anaB); // voice participates in X-Y figure
-  micFilt.connect(micMonGain); micMonGain.connect(AC.destination); // optional speaker monitor
+  micFilt.connect(micMonGain); micMonGain.connect(spkBus); // optional speaker monitor
 
-  // audio file player: granular grains -> fileGainNode -> fileFilt -> fileTrem -> speakers + scope + echo.
+  // audio file player: granular grains -> fileGainNode -> fileFilt -> fileTrem -> mix + echo.
   // fileFilt tracks the Tone controls and the LFO; fileTrem carries the tremolo so the file
   // gets the same filter/vibrato/wobble/tremolo treatment as the synth voices.
   fileGainNode=AC.createGain(); fileGainNode.gain.value=0;
   fileFilt=AC.createBiquadFilter(); fileFilt.type='lowpass'; fileFilt.frequency.value=20000;
   fileTrem=AC.createGain(); fileTrem.gain.value=1;
   fileGainNode.connect(fileFilt); fileFilt.connect(fileTrem);
-  fileTrem.connect(AC.destination); fileTrem.connect(visBus); fileTrem.connect(delay);
+  fileTrem.connect(spkBus); fileTrem.connect(delay);
   fileGainNode.connect(anaA); fileTrem.connect(anaB); // pre/post-filter taps open up the X-Y figure
 
   oscA.start(); oscB.start(); oscSub.start(); noiseSrc.start(); lfo.start();
   started=true; applyAll(); syncDrone();
 }
 
-function applyAll(){ applyOsc(); applyBody(); applyMod(); applyFilter(); applyEcho(); applyOut(); applyFile(); }
+function applyAll(){ applyOsc(); applyBody(); applyMod(); applyFilter(); applyEcho(); applyOut(); applyMasterOut(); applyFile(); }
 
 function applyOsc(){
   if(!started) return;
@@ -404,14 +417,18 @@ function applyEcho(){
 }
 function applyOut(){
   if(!started) return;
-  master.gain.setTargetAtTime(Math.pow(S.vol,1.6), AC.currentTime,.04);
+  master.gain.setTargetAtTime(mixG(S.vol), AC.currentTime,.04);   // synth channel of the mix
+}
+function applyMasterOut(){
+  if(!started||!outBus) return;
+  outBus.gain.setTargetAtTime(mixG(S.masterOut)*1.1, AC.currentTime,.04); // master output: scales sound, light, recording
 }
 
 /* ---------- microphone input ---------- */
 function applyMic(){
   if(!started||!micGainNode) return;
-  micGainNode.gain.setTargetAtTime(S.mic?S.micGain*1.6:0, AC.currentTime,.05);
-  micMonGain.gain.setTargetAtTime((S.mic&&S.micMon)?S.micGain*1.0:0, AC.currentTime,.05);
+  micGainNode.gain.setTargetAtTime(S.mic?mixG(S.micGain):0, AC.currentTime,.05);          // mic channel of the mix
+  micMonGain.gain.setTargetAtTime((S.mic&&S.micMon)?mixG(S.micGain):0, AC.currentTime,.05); // monitor to speakers
 }
 function enableMic(){
   if(!started){ flash('POWER ON FIRST'); S.mic=false; renderAll(); return; }
@@ -439,7 +456,7 @@ let grainTimer=null,readPos=0,nextGrainTime=0,endPending=false;
 const GRAIN=0.12, OVERLAP=2, HOP=GRAIN/OVERLAP;   // 50% overlap, triangular window = clean at unity
 const fileRatio=()=>fRate(S.fileRate);            // tempo multiplier
 const filePitchRatio=()=>Math.pow(2,(S.filePitch-0.5)*2); // +/- one octave, v=0.5 -> unity
-function applyFile(){ if(fileGainNode) fileGainNode.gain.setTargetAtTime(S.fileLevel*1.2, AC.currentTime,.04); }
+function applyFile(){ if(fileGainNode) fileGainNode.gain.setTargetAtTime(mixG(S.fileLevel), AC.currentTime,.04); } // file channel of the mix
 function updateFileBtn(){ if(!playBtn) return;
   playBtn.textContent=filePlaying?'STOP':'PLAY';
   playBtn.classList.toggle('occupied',filePlaying); }
@@ -514,13 +531,13 @@ function startRec(){
     recL.push(new Float32Array(l)); recR.push(new Float32Array(r)); recLen+=l.length;
   };
   recSink=AC.createGain(); recSink.gain.value=0;       // silent sink keeps the node pulling
-  visBus.connect(recProc); recProc.connect(recSink); recSink.connect(AC.destination);
+  outBus.connect(recProc); recProc.connect(recSink); recSink.connect(AC.destination);
   recording=true; updateRecBtn(); flash('● RECORDING');
 }
 function stopRec(){
   if(!recording) return;
   recording=false; updateRecBtn();
-  try{ visBus.disconnect(recProc); }catch(e){}
+  try{ outBus.disconnect(recProc); }catch(e){}
   try{ recProc.disconnect(); }catch(e){}
   try{ recSink.disconnect(); }catch(e){}
   recProc=null; recSink=null;
@@ -716,7 +733,8 @@ $('#cTone').append(
   makeSelector({label:'Filter',key:'filterMode',options:['LP','HP','BP'],on:applyFilter}),
   makeKnob({label:'Timbre',key:'timbre',def:.62,on:applyFilter,fmt:v=>(fCut(v)/1000).toFixed(2)+'k'}),
   makeKnob({label:'Reso',key:'reso',def:.20,on:applyFilter,fmt:v=>(0.5+v*22).toFixed(1)+'Q'}),
-  makeKnob({label:'Volume',key:'vol',def:.55,on:applyOut,fmt:v=>(v*100|0)}));
+  makeKnob({label:'Synth',key:'vol',def:.62,on:applyOut,fmt:v=>(v*100|0)}),
+  makeKnob({label:'Output',key:'masterOut',def:.8,on:applyMasterOut,fmt:v=>(v*100|0)}));
 $('#cEcho').append(
   makeKnob({label:'Time',key:'dlyTime',def:.30,on:applyEcho,fmt:v=>((0.04+v*0.66)*1000|0)+'ms'}),
   makeKnob({label:'Feedbk',key:'dlyFb',def:.35,on:applyEcho,fmt:v=>(v*100|0)+'%'}),
@@ -724,14 +742,14 @@ $('#cEcho').append(
 $('#cMic').append(
   makeToggle({label:'Mic',key:'mic',on:toggleMic}),
   makeToggle({label:'Monitor',key:'micMon',on:applyMic}),
-  makeKnob({label:'Level',key:'micGain',def:.6,on:applyMic,fmt:v=>(v*100|0)+'%'}));
+  makeKnob({label:'Level',key:'micGain',def:.55,on:applyMic,fmt:v=>(v*100|0)+'%'}));
 $('#cFile').append(
   makeButton({label:'Source',text:'LOAD',title:'Upload an audio file',on:loadAudioFile}),
   makeButton({label:'Transport',text:'PLAY',title:'Play / stop the loaded file',on:toggleFile,ref:b=>playBtn=b}),
   makeToggle({label:'Loop',key:'fileLoop',on:()=>{}}),
   makeKnob({label:'Speed',key:'fileRate',def:.5,on:()=>{},fmt:v=>fRate(v).toFixed(2)+'x'}),
   makeKnob({label:'Pitch',key:'filePitch',def:.5,on:()=>{},fmt:v=>{const st=Math.round((v-0.5)*24);return (st>0?'+':'')+st+'st';}}),
-  makeKnob({label:'Level',key:'fileLevel',def:.7,on:applyFile,fmt:v=>(v*100|0)+'%'}));
+  makeKnob({label:'Level',key:'fileLevel',def:.62,on:applyFile,fmt:v=>(v*100|0)+'%'}));
 $('#cRec').append(
   makeButton({label:'Capture',text:'REC',cls:'accent',title:'Record your performance to a file',on:toggleRec,ref:b=>recBtn=b}));
 $('#cDisp').append(
@@ -797,7 +815,7 @@ function shareLink(){
 
 /* ---- downloadable local patch file (.json) ---- */
 function savePatchFile(){
-  const data={app:'OSCILLON',by:'M.B. Parks',version:'0.0.3',saved:new Date().toISOString(),patch:snapshot()};
+  const data={app:'OSCILLON',by:'M.B. Parks',version:'0.0.4',saved:new Date().toISOString(),patch:snapshot()};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob), a=document.createElement('a');
   const stamp=new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
