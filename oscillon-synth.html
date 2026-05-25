@@ -148,6 +148,10 @@
   .pbtn:active{transform:translateY(3px);box-shadow:0 0 0 #15110b,inset 0 1px 0 rgba(255,255,255,.08)}
   .pbtn.occupied{color:var(--amber);text-shadow:0 0 7px var(--amber)}
   .pbtn.accent{background:linear-gradient(180deg,#5a3a20,#33200f);color:#ffcf9a}
+  .pbtn.rec{background:linear-gradient(180deg,#ff5040,#a01608);color:#fff;
+    box-shadow:0 0 14px 2px rgba(255,69,48,.7),0 3px 0 #5a0c04,inset 0 1px 0 rgba(255,255,255,.2);
+    animation:recpulse 1s ease-in-out infinite}
+  @keyframes recpulse{0%,100%{filter:brightness(1)}50%{filter:brightness(1.35)}}
 
   .keys{display:flex;gap:4px}
   .key{width:28px;height:44px;border-radius:5px;cursor:pointer;position:relative;border:1px solid #000;
@@ -187,6 +191,8 @@
       <div class="cluster"><div class="lab">Tone &amp; Out</div><div class="controls" id="cTone"></div></div>
       <div class="cluster"><div class="lab">Echo Tank</div><div class="controls" id="cEcho"></div></div>
       <div class="cluster"><div class="lab">Voice In</div><div class="controls" id="cMic"></div></div>
+      <div class="cluster"><div class="lab">Audio File</div><div class="controls" id="cFile"></div></div>
+      <div class="cluster"><div class="lab">Recorder</div><div class="controls" id="cRec"></div></div>
       <div class="cluster"><div class="lab">Screen</div><div class="controls" id="cDisp"></div></div>
       <div class="cluster"><div class="lab">Patch</div><div class="controls" id="cPatch"></div></div>
       <div class="cluster"><div class="lab">Manual Keyer</div><div class="controls"><div class="keys" id="keys"></div></div></div>
@@ -213,16 +219,18 @@ const S={
   filterMode:0, timbre:.62, reso:.20, vol:.55,
   dlyTime:.30, dlyFb:.35, dlyMix:0,
   mic:false, micMon:false, micGain:.6,
+  fileLevel:.7, fileLoop:true,
   scopeMode:1, palette:0, grid:true, text:true, leds:true, clean:false, hue:135
 };
 /* order used for share-link encoding (power excluded on purpose) */
 const ENC=['drone','tremolo','tuneA','tuneB','waveA','waveB','sub','noise',
   'atk','dec','sus','rel','lfoRate','modDepth','modRoute','filterMode',
-  'timbre','reso','vol','dlyTime','dlyFb','dlyMix','micGain','scopeMode','palette','grid','text','leds'];
+  'timbre','reso','vol','dlyTime','dlyFb','dlyMix','micGain','fileLevel','fileLoop','scopeMode','palette','grid','text','leds'];
 
 let AC=null,oscA,oscB,oscSub,noiseSrc,gA,gB,gSub,gNoise,mix,filt,trem,ampEnv,
     master,anaMaster,anaA,anaB,lfo,lfoGain,delay,fbFilter,fb,wet,dry,
-    micStream,micSrc,micGainNode,micFilt,micMonGain;
+    micStream,micSrc,micGainNode,micFilt,micMonGain,
+    visBus,recDest,fileGainNode,fileFilt;
 let started=false,gateOpen=false,curFreq=0;
 const activeNotes=new Map();             // id -> frequency (insertion order = priority)
 const WAVES=['sine','triangle','square','sawtooth'];
@@ -280,25 +288,37 @@ function buildGraph(){
   ampEnv.connect(delay);                   // echo send
   delay.connect(wet); wet.connect(master); // wet return
   delay.connect(fbFilter); fbFilter.connect(fb); fb.connect(delay); // feedback loop
-  master.connect(anaMaster); master.connect(AC.destination);
   lfo.connect(lfoGain);
 
-  // microphone path: mic -> micGainNode -> micFilt -> master (always reaches scope + echo)
-  // bypasses the note envelope so voice is heard/seen continuously, not gated by keys.
-  // micMonGain is the only path to the speakers, kept at 0 unless Monitor is on (feedback guard).
+  // visBus = the full audible mix that drives the light show AND the recorder.
+  // spkBus path is just AC.destination; recDest is a MediaStreamDestination tapped for recording.
+  visBus=AC.createGain();
+  recDest=AC.createMediaStreamDestination();
+  visBus.connect(anaMaster); visBus.connect(recDest);
+  master.connect(AC.destination); master.connect(visBus);
+
+  // microphone path: mic -> micGainNode -> micFilt. Reaches the scope/recorder always,
+  // but only reaches the speakers via micMonGain when Monitor is on (feedback guard).
   micGainNode=AC.createGain(); micGainNode.gain.value=0;
   micFilt=AC.createBiquadFilter(); micFilt.type='lowpass'; micFilt.frequency.value=12000;
   micMonGain=AC.createGain(); micMonGain.gain.value=0;
   micGainNode.connect(micFilt);
-  micFilt.connect(anaMaster);          // light show always reacts to voice
+  micFilt.connect(visBus);             // light show + recording always react to voice
   micFilt.connect(delay);              // voice through the echo tank
   micFilt.connect(micMonGain); micMonGain.connect(AC.destination); // optional speaker monitor
+
+  // audio file player: fileNode -> fileGainNode -> fileFilt -> speakers + scope + echo.
+  // fileFilt tracks the Tone controls so the uploaded audio gets sculpted too.
+  fileGainNode=AC.createGain(); fileGainNode.gain.value=0;
+  fileFilt=AC.createBiquadFilter(); fileFilt.type='lowpass'; fileFilt.frequency.value=20000;
+  fileGainNode.connect(fileFilt);
+  fileFilt.connect(AC.destination); fileFilt.connect(visBus); fileFilt.connect(delay);
 
   oscA.start(); oscB.start(); oscSub.start(); noiseSrc.start(); lfo.start();
   started=true; applyAll(); syncDrone();
 }
 
-function applyAll(){ applyOsc(); applyBody(); applyMod(); applyFilter(); applyEcho(); applyOut(); }
+function applyAll(){ applyOsc(); applyBody(); applyMod(); applyFilter(); applyEcho(); applyOut(); applyFile(); }
 
 function applyOsc(){
   if(!started) return;
@@ -330,6 +350,9 @@ function applyFilter(){
   filt.type=FILTERS[S.filterMode];
   filt.frequency.setTargetAtTime(fCut(S.timbre),AC.currentTime,.03);
   filt.Q.setTargetAtTime(0.5+S.reso*22, AC.currentTime,.03);
+  if(fileFilt){ fileFilt.type=FILTERS[S.filterMode];
+    fileFilt.frequency.setTargetAtTime(fCut(S.timbre),AC.currentTime,.03);
+    fileFilt.Q.setTargetAtTime(0.5+S.reso*22, AC.currentTime,.03); }
 }
 function applyEcho(){
   if(!started) return;
@@ -364,6 +387,68 @@ function enableMic(){
 }
 function disableMic(){ applyMic(); flash('MIC OFF'); }
 function toggleMic(){ if(S.mic) enableMic(); else disableMic(); }
+
+/* ---------- uploaded audio file player ---------- */
+let fileBuf=null,fileNode=null,filePlaying=false,fileName='';
+let playBtn=null,recBtn=null;
+function applyFile(){ if(fileGainNode) fileGainNode.gain.setTargetAtTime(S.fileLevel*1.2, AC.currentTime,.04); }
+function updateFileBtn(){ if(!playBtn) return;
+  playBtn.textContent=filePlaying?'STOP':'PLAY';
+  playBtn.classList.toggle('occupied',filePlaying); }
+const audioFileInput=document.createElement('input');
+audioFileInput.type='file'; audioFileInput.accept='audio/*'; audioFileInput.style.display='none';
+document.body.appendChild(audioFileInput);
+audioFileInput.addEventListener('change',ev=>{
+  const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+  if(!started){ flash('POWER ON FIRST'); audioFileInput.value=''; return; }
+  fileName=f.name; flash('DECODING…');
+  f.arrayBuffer().then(ab=>AC.decodeAudioData(ab))
+    .then(buf=>{ fileBuf=buf; flash('LOADED: '+fileName.slice(0,18).toUpperCase()); })
+    .catch(()=>flash('CANNOT DECODE FILE'));
+  audioFileInput.value='';
+});
+function loadAudioFile(){ if(!started){flash('POWER ON FIRST');return;} audioFileInput.click(); }
+function playFile(){
+  if(!fileBuf){ flash('NO FILE LOADED'); return; }
+  stopFile();
+  fileNode=AC.createBufferSource(); fileNode.buffer=fileBuf; fileNode.loop=S.fileLoop;
+  fileNode.connect(fileGainNode);
+  fileNode.onended=()=>{ if(!S.fileLoop){ filePlaying=false; fileNode=null; updateFileBtn(); } };
+  applyFile(); fileNode.start(); filePlaying=true; updateFileBtn(); flash('FILE PLAYING');
+}
+function stopFile(){ if(fileNode){ try{ fileNode.onended=null; fileNode.stop(); }catch(e){} fileNode=null; }
+  filePlaying=false; updateFileBtn(); }
+function toggleFile(){ filePlaying?stopFile():playFile(); }
+
+/* ---------- performance recorder ---------- */
+let recorder=null,recChunks=[],recording=false;
+function updateRecBtn(){ if(!recBtn) return;
+  recBtn.textContent=recording?'STOP':'REC';
+  recBtn.classList.toggle('rec',recording); }
+function startRec(){
+  if(!started){ flash('POWER ON FIRST'); return; }
+  if(typeof MediaRecorder==='undefined'){ flash('NO RECORDER SUPPORT'); return; }
+  recChunks=[];
+  let mime=''; ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4']
+    .forEach(t=>{ if(!mime&&MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t)) mime=t; });
+  try{ recorder = mime ? new MediaRecorder(recDest.stream,{mimeType:mime}) : new MediaRecorder(recDest.stream); }
+  catch(e){ flash('RECORDER ERROR'); return; }
+  recorder.ondataavailable=e=>{ if(e.data&&e.data.size) recChunks.push(e.data); };
+  recorder.onstop=()=>{
+    const type=recorder.mimeType||'audio/webm';
+    const ext=type.indexOf('ogg')>=0?'ogg':type.indexOf('mp4')>=0?'m4a':'webm';
+    const blob=new Blob(recChunks,{type});
+    const url=URL.createObjectURL(blob), a=document.createElement('a');
+    const stamp=new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+    a.href=url; a.download='oscillon-recording-'+stamp+'.'+ext;
+    document.body.appendChild(a); a.click();
+    setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); },1000);
+    flash('RECORDING SAVED');
+  };
+  recorder.start(); recording=true; updateRecBtn(); flash('● RECORDING');
+}
+function stopRec(){ if(recorder&&recording){ recorder.stop(); recording=false; updateRecBtn(); } }
+function toggleRec(){ recording?stopRec():startRec(); }
 
 /* ---------- envelope + voice management ---------- */
 function triggerAttack(){
@@ -451,6 +536,15 @@ function makeToggle(cfg){
   return wrap;
 }
 function renderAll(){ renderers.forEach(r=>r()); }
+function makeButton(cfg){
+  const wrap=document.createElement('div'); wrap.className='ctrl'; wrap.style.width='auto';
+  const cap=document.createElement('div'); cap.className='cap'; cap.textContent=cfg.label;
+  const b=document.createElement('div'); b.className='pbtn'+(cfg.cls?' '+cfg.cls:''); b.textContent=cfg.text;
+  b.style.height='40px'; if(cfg.title) b.title=cfg.title;
+  b.addEventListener('click',()=>cfg.on(b));
+  wrap.append(cap,b); cfg.ref&&cfg.ref(b);
+  return wrap;
+}
 function makePicker(cfg){
   const wrap=document.createElement('div'); wrap.className='ctrl';
   const cap=document.createElement('div'); cap.className='cap'; cap.textContent=cfg.label;
@@ -521,6 +615,13 @@ $('#cMic').append(
   makeToggle({label:'Mic',key:'mic',on:toggleMic}),
   makeToggle({label:'Monitor',key:'micMon',on:applyMic}),
   makeKnob({label:'Level',key:'micGain',def:.6,on:applyMic,fmt:v=>(v*100|0)+'%'}));
+$('#cFile').append(
+  makeButton({label:'Source',text:'LOAD',title:'Upload an audio file',on:loadAudioFile}),
+  makeButton({label:'Transport',text:'PLAY',title:'Play / stop the loaded file',on:toggleFile,ref:b=>playBtn=b}),
+  makeToggle({label:'Loop',key:'fileLoop',on:()=>{ if(fileNode) fileNode.loop=S.fileLoop; }}),
+  makeKnob({label:'Level',key:'fileLevel',def:.7,on:applyFile,fmt:v=>(v*100|0)+'%'}));
+$('#cRec').append(
+  makeButton({label:'Capture',text:'REC',cls:'accent',title:'Record your performance to a file',on:toggleRec,ref:b=>recBtn=b}));
 $('#cDisp').append(
   makeSelector({label:'Mode',key:'scopeMode',options:['WAVE','X·Y','SPEC','STAR','ROSE','FALL'],on:()=>{}}),
   makePicker({label:'Palette',key:'palette',options:PALETTES.map(p=>p.name),on:()=>{}}),
