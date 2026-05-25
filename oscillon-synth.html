@@ -7,8 +7,9 @@
           downloadable export. Granular file engine giving independent
           Speed (tempo) and Pitch (+/- one octave) controls. Internal
           mix bus so the scope, the recording, and the speaker output
-          stay consistent. Fixed an LFO tap shared between tremolo and
-          pitch/filter modulation; tremolo now has its own tap.
+          stay consistent. Recorder exports 16-bit stereo WAV. Fixed an
+          LFO tap shared between tremolo and pitch/filter modulation;
+          tremolo now has its own tap.
   v0.0.2  ADSR envelope, tape echo tank, sub-oscillator + noise, HP/BP
           filter modes; level-reactive beam/trails, STAR/ROSE/FALL
           display modes, pitch+timbre color; CRT jitter, Shift fine-
@@ -250,7 +251,7 @@ const ENC=['drone','tremolo','tuneA','tuneB','waveA','waveB','sub','noise',
 let AC=null,oscA,oscB,oscSub,noiseSrc,gA,gB,gSub,gNoise,mix,filt,trem,ampEnv,
     master,anaMaster,anaA,anaB,lfo,lfoGain,lfoTrem,delay,fbFilter,fb,wet,dry,
     micStream,micSrc,micGainNode,micFilt,micMonGain,
-    visBus,recDest,fileGainNode,fileFilt,fileTrem;
+    visBus,fileGainNode,fileFilt,fileTrem;
 let started=false,gateOpen=false,curFreq=0;
 const activeNotes=new Map();             // id -> frequency (insertion order = priority)
 const WAVES=['sine','triangle','square','sawtooth'];
@@ -312,11 +313,9 @@ function buildGraph(){
   lfo.connect(lfoGain);                  // routable modulation tap (pitch or filter)
   lfoTrem=AC.createGain(); lfo.connect(lfoTrem); // independent tremolo tap
 
-  // visBus = the full audible mix that drives the light show AND the recorder.
-  // spkBus path is just AC.destination; recDest is a MediaStreamDestination tapped for recording.
+  // visBus = the full audible mix that drives the light show AND the WAV recorder tap.
   visBus=AC.createGain();
-  recDest=AC.createMediaStreamDestination();
-  visBus.connect(anaMaster); visBus.connect(recDest);
+  visBus.connect(anaMaster);
   master.connect(AC.destination); master.connect(visBus);
 
   // microphone path: mic -> micGainNode -> micFilt. Reaches the scope/recorder always,
@@ -498,34 +497,68 @@ function stopFile(){ filePlaying=false; endPending=false;
 function toggleFile(){ filePlaying?stopFile():playFile(); }
 
 /* ---------- performance recorder ---------- */
-let recorder=null,recChunks=[],recording=false;
+let recProc=null,recSink=null,recL=[],recR=[],recLen=0,recSR=44100,recording=false;
 function updateRecBtn(){ if(!recBtn) return;
   recBtn.textContent=recording?'STOP':'REC';
   recBtn.classList.toggle('rec',recording); }
 function startRec(){
   if(!started){ flash('POWER ON FIRST'); return; }
-  if(typeof MediaRecorder==='undefined'){ flash('NO RECORDER SUPPORT'); return; }
-  recChunks=[];
-  let mime=''; ['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4']
-    .forEach(t=>{ if(!mime&&MediaRecorder.isTypeSupported&&MediaRecorder.isTypeSupported(t)) mime=t; });
-  try{ recorder = mime ? new MediaRecorder(recDest.stream,{mimeType:mime}) : new MediaRecorder(recDest.stream); }
-  catch(e){ flash('RECORDER ERROR'); return; }
-  recorder.ondataavailable=e=>{ if(e.data&&e.data.size) recChunks.push(e.data); };
-  recorder.onstop=()=>{
-    const type=recorder.mimeType||'audio/webm';
-    const ext=type.indexOf('ogg')>=0?'ogg':type.indexOf('mp4')>=0?'m4a':'webm';
-    const blob=new Blob(recChunks,{type});
-    const url=URL.createObjectURL(blob), a=document.createElement('a');
-    const stamp=new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
-    a.href=url; a.download='oscillon-recording-'+stamp+'.'+ext;
-    document.body.appendChild(a); a.click();
-    setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); },1000);
-    flash('RECORDING SAVED');
+  recL=[]; recR=[]; recLen=0; recSR=AC.sampleRate;
+  const N=4096;
+  recProc=(AC.createScriptProcessor||AC.createJavaScriptNode).call(AC,N,2,2);
+  recProc.onaudioprocess=e=>{
+    if(!recording) return;
+    const ib=e.inputBuffer;
+    const l=ib.getChannelData(0);
+    const r=ib.numberOfChannels>1?ib.getChannelData(1):l;
+    recL.push(new Float32Array(l)); recR.push(new Float32Array(r)); recLen+=l.length;
   };
-  recorder.start(); recording=true; updateRecBtn(); flash('● RECORDING');
+  recSink=AC.createGain(); recSink.gain.value=0;       // silent sink keeps the node pulling
+  visBus.connect(recProc); recProc.connect(recSink); recSink.connect(AC.destination);
+  recording=true; updateRecBtn(); flash('● RECORDING');
 }
-function stopRec(){ if(recorder&&recording){ recorder.stop(); recording=false; updateRecBtn(); } }
+function stopRec(){
+  if(!recording) return;
+  recording=false; updateRecBtn();
+  try{ visBus.disconnect(recProc); }catch(e){}
+  try{ recProc.disconnect(); }catch(e){}
+  try{ recSink.disconnect(); }catch(e){}
+  recProc=null; recSink=null;
+  if(recLen<1){ flash('NOTHING RECORDED'); recL=[];recR=[]; return; }
+  const blob=encodeWAV(recL,recR,recLen,recSR);
+  recL=[]; recR=[];
+  const url=URL.createObjectURL(blob), a=document.createElement('a');
+  const stamp=new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+  a.href=url; a.download='oscillon-recording-'+stamp+'.wav';
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{ URL.revokeObjectURL(url); a.remove(); },1000);
+  flash('RECORDING SAVED (WAV)');
+}
 function toggleRec(){ recording?stopRec():startRec(); }
+/* encode interleaved 16-bit PCM stereo WAV from accumulated Float32 chunks */
+function encodeWAV(chunksL,chunksR,len,sr){
+  const L=new Float32Array(len), R=new Float32Array(len);
+  let off=0;
+  for(let i=0;i<chunksL.length;i++){ L.set(chunksL[i],off); R.set(chunksR[i],off); off+=chunksL[i].length; }
+  const blockAlign=4, dataLen=len*blockAlign;            // 2 ch * 2 bytes
+  const buf=new ArrayBuffer(44+dataLen), dv=new DataView(buf);
+  let p=0; const ws=s=>{ for(let i=0;i<s.length;i++) dv.setUint8(p++,s.charCodeAt(i)); };
+  ws('RIFF'); dv.setUint32(p,36+dataLen,true);p+=4; ws('WAVE');
+  ws('fmt '); dv.setUint32(p,16,true);p+=4;
+  dv.setUint16(p,1,true);p+=2;                            // PCM
+  dv.setUint16(p,2,true);p+=2;                            // stereo
+  dv.setUint32(p,sr,true);p+=4;
+  dv.setUint32(p,sr*blockAlign,true);p+=4;                // byte rate
+  dv.setUint16(p,blockAlign,true);p+=2;
+  dv.setUint16(p,16,true);p+=2;                           // bits/sample
+  ws('data'); dv.setUint32(p,dataLen,true);p+=4;
+  for(let i=0;i<len;i++){
+    let l=L[i]<-1?-1:L[i]>1?1:L[i], r=R[i]<-1?-1:R[i]>1?1:R[i];
+    dv.setInt16(p, l<0?l*0x8000:l*0x7FFF, true); p+=2;
+    dv.setInt16(p, r<0?r*0x8000:r*0x7FFF, true); p+=2;
+  }
+  return new Blob([buf],{type:'audio/wav'});
+}
 
 /* ---------- envelope + voice management ---------- */
 function triggerAttack(){

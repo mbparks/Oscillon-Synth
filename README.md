@@ -29,7 +29,7 @@ Everything lives in one HTML file. There is no build step, no dependencies, and 
 - **Audio file.** Upload any audio file the browser can decode. It plays through the full processing chain (filter, LFO, tremolo, and echo), so you can filter-sweep, add vibrato or wobble, and drench an existing track in tape echo while it drives the visuals. A granular playback engine provides independent Speed and Pitch controls: Speed sets tempo from 0.25x to 4x, and Pitch shifts up or down a full octave without changing the tempo. The file also appears in the X-Y Lissajous display alongside the synth. Supports looping and level control.
 
 ### Output
-- **Performance recorder.** Capture your whole session (oscillators, keyer, microphone, and the loaded file, with all processing baked in) to a downloadable audio file. The recording matches what the light show reacts to.
+- **Performance recorder.** Capture your whole session (oscillators, keyer, microphone, and the loaded file, with all processing baked in) to a downloadable 16-bit stereo WAV file. WAV opens in any editor, DAW, or player with no transcoding. The recording matches what the light show reacts to.
 
 ### State and sharing
 - Four in-session patch slots for fast A/B comparison.
@@ -98,7 +98,7 @@ Patch slots: click to recall, Shift-click to store.
 
 ## Browser support
 
-Built on the Web Audio API, Canvas, and (optionally) Web MIDI and MediaRecorder. Works in current versions of Chrome, Edge, Firefox, and Safari. MIDI input requires a browser with Web MIDI (Chrome and Edge). Recording requires MediaRecorder support, which is present in all current major browsers.
+Built on the Web Audio API, Canvas, and (optionally) Web MIDI. Works in current versions of Chrome, Edge, Firefox, and Safari. MIDI input requires a browser with Web MIDI (Chrome and Edge). The recorder encodes WAV in plain JavaScript, so it works in any browser with the Web Audio API.
 
 ## Privacy
 
