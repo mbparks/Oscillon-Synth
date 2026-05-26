@@ -1,7 +1,24 @@
 <!DOCTYPE html>
-<!-- OSCILLON by M.B. Parks — Light & Tone Console · Model 7 · v0.0.4
+<!-- OSCILLON by M.B. Parks — Light & Tone Console · Model 7 · v0.0.7
 =====================================================================
   CHANGELOG
+  v0.0.7  Full gain-staging pass: master output now reaches unity+ at
+          default (was attenuating), default filter opened from ~2.4kHz
+          to ~5.5kHz so the mix sounds bright and full, synth voice given
+          headroom. Per-source X-Y two-axis separation (synth uses its two
+          oscillators; voice and file use a short delay on the Y axis) so
+          each source draws an open figure, not a flat diagonal. Master
+          limiter retuned to a transparent peak catcher so a live mic no
+          longer ducks the synth.
+  v0.0.6  Fixed microphone input (keep-alive for the Chrome MediaStream
+          silence bug, context resume on enable, echo cancellation to
+          stop feedback howl). Moved the master Output to a prominent
+          Master knob in the Supply cluster.
+  v0.0.5  Skeuomorphic patch bay (slides in from the right). Real
+          routing: each source (synth/voice/file) is silent until wired
+          to an effect (filter/echo/tremolo) and onward to Master Out or
+          the Light Show. Drag jack-to-jack or click-click to wire, click
+          a wire to cut it. Patches save with slots and patch files.
   v0.0.4  Matched 3-channel mix: synth, mic, and file now share one
           fader curve so equal knob positions sound equal. Added a
           master Output knob that scales sound, light show, and
@@ -29,7 +46,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>OSCILLON by M.B. Parks — Light & Tone Console · v0.0.4</title>
+<title>OSCILLON by M.B. Parks — Light & Tone Console · v0.0.7</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500;600;700&family=Saira+Condensed:wght@500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
@@ -190,13 +207,65 @@
   .key.lit .pip{background:var(--amber);box-shadow:0 0 8px var(--amber)}
   .key.down{transform:translateY(4px);box-shadow:0 1px 0 #6d6147,0 2px 3px rgba(0,0,0,.5),inset 0 2px 0 rgba(255,255,255,.5)}
   .key sub{font-size:6px;opacity:.55}
+
+  /* ===================== PATCH BAY (slide-in from right) ===================== */
+  .patchtab{position:absolute;top:50%;right:0;z-index:6;transform:translateY(-50%);cursor:pointer;
+    writing-mode:vertical-rl;text-orientation:mixed;font-family:'Saira Condensed';font-weight:700;
+    font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:#cdbf9a;
+    background:linear-gradient(90deg,#221d18,#15110b);border:1px solid #000;border-right:none;
+    border-radius:9px 0 0 9px;padding:16px 7px;box-shadow:-3px 0 12px rgba(0,0,0,.55);
+    transition:opacity .3s;}
+  .patchtab .chev{color:#6cff8a;text-shadow:0 0 9px #6cff8a}
+  .patchbay{position:absolute;top:0;right:0;bottom:0;z-index:7;width:380px;max-width:92vw;
+    transform:translateX(102%);transition:transform .5s cubic-bezier(.4,0,.2,1);
+    background:
+      linear-gradient(110deg, rgba(255,255,255,.10), rgba(0,0,0,.22) 45%, rgba(0,0,0,.34)),
+      repeating-linear-gradient(0deg, rgba(255,255,255,.04) 0 1px, transparent 1px 4px),
+      linear-gradient(160deg,var(--panel),var(--panel-dk));
+    border-left:2px solid #6f6347;box-shadow:-14px 0 40px rgba(0,0,0,.6);
+    display:flex;flex-direction:column;overflow:hidden;}
+  .patchbay.open{transform:translateX(0);}
+  .patchhead{display:flex;align-items:center;justify-content:space-between;padding:14px 16px 10px;
+    border-bottom:1px solid #6f6347;}
+  .patchhead h2{margin:0;font-family:'Saira Condensed';font-weight:700;letter-spacing:.2em;
+    font-size:14px;text-transform:uppercase;color:#2f2920;text-shadow:0 1px 0 rgba(255,255,255,.35)}
+  .patchhead .x{cursor:pointer;font-family:'Saira Condensed';font-weight:700;font-size:13px;color:#5a4f38;
+    border:1px solid #5a4f38;border-radius:5px;padding:2px 9px;background:rgba(0,0,0,.08)}
+  .patchwrap{position:relative;flex:1 1 auto;min-height:0;overflow:hidden;}
+  .patchsvg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;}
+  .patchcols{position:absolute;inset:0;display:flex;justify-content:space-between;
+    padding:18px 22px;z-index:1;}
+  .pcol{display:flex;flex-direction:column;gap:14px;}
+  .pcol.mid{justify-content:center;}
+  .pcol.right{align-items:flex-end;}
+  .pcollab{font-family:'Saira Condensed';font-weight:700;font-size:9px;letter-spacing:.2em;
+    text-transform:uppercase;color:#5a4f38;text-align:center;margin-bottom:2px}
+  .jackrow{display:flex;align-items:center;gap:8px;}
+  .pcol.right .jackrow{flex-direction:row-reverse;}
+  .jacklabel{font-family:'Saira Condensed';font-weight:600;font-size:10px;letter-spacing:.06em;
+    text-transform:uppercase;color:#2f2920;white-space:nowrap}
+  .jack{width:26px;height:26px;border-radius:50%;cursor:pointer;position:relative;flex:0 0 auto;
+    background:radial-gradient(circle at 50% 38%, #0a0805 0 34%, #1c1812 35%, #5b5038 64%, #8a7c58 78%, #43392a 100%);
+    box-shadow:inset 0 1px 2px rgba(255,255,255,.4),inset 0 -2px 3px rgba(0,0,0,.7),0 2px 3px rgba(0,0,0,.5);
+    transition:box-shadow .12s, transform .08s;}
+  .jack::after{content:"";position:absolute;inset:9px;border-radius:50%;
+    background:radial-gradient(circle at 50% 40%,#15110b,#000);box-shadow:inset 0 0 3px #000;}
+  .jack:hover{transform:scale(1.08);box-shadow:inset 0 1px 2px rgba(255,255,255,.5),0 0 9px rgba(108,255,138,.5),0 2px 3px rgba(0,0,0,.5)}
+  .jack.armed{box-shadow:inset 0 1px 2px rgba(255,255,255,.5),0 0 14px 2px var(--amber),0 2px 3px rgba(0,0,0,.5)}
+  .jack.connected::before{content:"";position:absolute;inset:-3px;border-radius:50%;
+    border:1.5px solid rgba(108,255,138,.65);}
+  .patchfoot{padding:8px 16px 12px;border-top:1px solid #6f6347;display:flex;gap:8px;justify-content:center;
+    flex-wrap:wrap;}
+  .patchfoot .pbtn{height:32px}
+  .patchhint{font-family:'Saira Condensed';font-size:8.5px;letter-spacing:.1em;color:#5a4f38;
+    text-align:center;padding:0 16px 8px;text-transform:uppercase}
 </style>
 </head>
 <body>
   <div class="show">
     <canvas id="scope"></canvas>
     <div class="scan"></div><div class="vig"></div><div class="glass"></div>
-    <div class="ovl marque"><div class="name">OSCILLON<span class="by">by M.B. Parks</span></div><div class="sub">Light &amp; Tone Console · Model 7 · v0.0.4</div></div>
+    <div class="ovl marque"><div class="name">OSCILLON<span class="by">by M.B. Parks</span></div><div class="sub">Light &amp; Tone Console · Model 7 · v0.0.7</div></div>
     <div class="ovl status" id="status">— STANDBY —</div>
     <div class="ovl lamps">
       <div class="lampwrap"><div class="jewel amber" id="lampPwr"></div><span>Pwr</span></div>
@@ -227,6 +296,41 @@
   <div class="revealzone" id="revealzone"></div>
   <div class="handle" id="handle"><span class="chev">&#9650;</span>Controls</div>
 
+  <div class="patchtab" id="patchtab"><span class="chev">&#9664;</span> Patch Bay</div>
+  <div class="patchbay" id="patchbay">
+    <div class="patchhead">
+      <h2>Patch Bay</h2>
+      <div class="x" id="patchclose">CLOSE</div>
+    </div>
+    <div class="patchwrap" id="patchwrap">
+      <svg class="patchsvg" id="patchsvg"></svg>
+      <div class="patchcols">
+        <div class="pcol left">
+          <div class="pcollab">Sources</div>
+          <div class="jackrow"><span class="jacklabel">Synth</span><div class="jack" data-port="out:synth"></div></div>
+          <div class="jackrow"><span class="jacklabel">Voice</span><div class="jack" data-port="out:voice"></div></div>
+          <div class="jackrow"><span class="jacklabel">File</span><div class="jack" data-port="out:file"></div></div>
+        </div>
+        <div class="pcol mid">
+          <div class="pcollab">Effects</div>
+          <div class="jackrow"><div class="jack" data-port="in:fxFilter"></div><span class="jacklabel">Filter</span><div class="jack" data-port="out:fxFilter"></div></div>
+          <div class="jackrow"><div class="jack" data-port="in:fxEcho"></div><span class="jacklabel">Echo</span><div class="jack" data-port="out:fxEcho"></div></div>
+          <div class="jackrow"><div class="jack" data-port="in:fxTrem"></div><span class="jacklabel">Tremolo</span><div class="jack" data-port="out:fxTrem"></div></div>
+        </div>
+        <div class="pcol right">
+          <div class="pcollab">Outputs</div>
+          <div class="jackrow"><span class="jacklabel">Master Out</span><div class="jack" data-port="in:master"></div></div>
+          <div class="jackrow"><span class="jacklabel">Light Show</span><div class="jack" data-port="in:scope"></div></div>
+        </div>
+      </div>
+    </div>
+    <div class="patchhint" id="patchhint">Drag from a jack to another, or click one then the other. Click a wire to cut it.</div>
+    <div class="patchfoot">
+      <div class="pbtn" id="patchDefault">DEFAULT</div>
+      <div class="pbtn accent" id="patchClear">CLEAR ALL</div>
+    </div>
+  </div>
+
 <script>
 "use strict";
 const $=s=>document.querySelector(s);
@@ -241,21 +345,21 @@ const S={
   sub:0, noise:0,
   atk:.08, dec:.30, sus:.80, rel:.35,
   lfoRate:.30, modDepth:.35, modRoute:1,
-  filterMode:0, timbre:.62, reso:.20, vol:.62, masterOut:.8,
+  filterMode:0, timbre:.78, reso:.20, vol:.62, masterOut:.8,
   dlyTime:.30, dlyFb:.35, dlyMix:0,
-  mic:false, micMon:false, micGain:.55,
-  fileLevel:.62, fileLoop:true, fileRate:.5, filePitch:.5,
+  mic:false, micMon:false, micInGain:.5, micGain:.6,
+  fileInGain:.5, fileLevel:.62, fileLoop:true, fileRate:.5, filePitch:.5,
   scopeMode:1, palette:0, grid:true, text:true, leds:true, clean:false, hue:135
 };
 /* order used for share-link encoding (power excluded on purpose) */
 const ENC=['drone','tremolo','tuneA','tuneB','waveA','waveB','sub','noise',
   'atk','dec','sus','rel','lfoRate','modDepth','modRoute','filterMode',
-  'timbre','reso','vol','masterOut','dlyTime','dlyFb','dlyMix','micGain','fileLevel','fileLoop','fileRate','filePitch','scopeMode','palette','grid','text','leds'];
+  'timbre','reso','vol','masterOut','dlyTime','dlyFb','dlyMix','micInGain','micGain','fileInGain','fileLevel','fileLoop','fileRate','filePitch','scopeMode','palette','grid','text','leds'];
 
 let AC=null,oscA,oscB,oscSub,noiseSrc,gA,gB,gSub,gNoise,mix,filt,trem,ampEnv,
-    master,anaMaster,anaA,anaB,lfo,lfoGain,lfoTrem,delay,fbFilter,fb,wet,dry,
-    micStream,micSrc,micGainNode,micFilt,micMonGain,
-    visBus,outBus,spkBus,fileGainNode,fileFilt,fileTrem;
+    master,anaMaster,anaA,anaB,lfo,lfoGain,lfoTrem,delay,fbFilter,fb,wet,dry,masterLimiter,
+    micStream,micSrc,micTrim,micGainNode,micFilt,micMonGain,
+    visBus,outBus,spkBus,fileGainNode,fileTrim,fileFilt,fileTrem;
 let started=false,gateOpen=false,curFreq=0;
 const activeNotes=new Map();             // id -> frequency (insertion order = priority)
 const WAVES=['sine','triangle','square','sawtooth'];
@@ -282,78 +386,148 @@ const decT=()=>0.01+S.dec*S.dec*3;
 const relT=()=>0.02+S.rel*S.rel*4.5;
 const fRate=v=>0.25*Math.pow(2,v*4);   // 0.25x .. 4x, v=0.5 -> 1.0x
 const mixG=v=>Math.pow(v,1.5);          // shared fader curve for the 3-channel mix (synth/mic/file)
+const micTrimAmt=v=>Math.pow(10,(v*60-24)/20);   // -24 dB .. +36 dB, v~0.4 -> unity
+const micTrimDb=v=>{ const db=v*60-24; return (db>0?'+':'')+db.toFixed(0)+'dB'; };
 const NOTES=[60,62,64,67,69,72,74,76];
 const KEYMAP={a:0,s:1,d:2,f:3,g:4,h:5,j:6,k:7};
 curFreq=fA(S.tuneA);
 
 /* ---------- audio graph ---------- */
+/* Patchable architecture:
+   OUTPUT PORTS (signal leaves here): synth, voice, file, fxFilter, fxEcho, fxTrem
+   INPUT PORTS  (signal arrives here): fxFilter, fxEcho, fxTrem, master, scope
+   A wire (out -> in) is a unity gain node in routeGain[out][in]. A node is audible only
+   if a wire path eventually reaches 'master'. 'scope' feeds the light show + recorder only.
+   When the patch bay is empty we install a default patch (each source -> filter -> echo ->
+   master, all -> scope) so the instrument behaves like before until the user repatches. */
+const OUT_PORTS=['synth','voice','file','fxFilter','fxEcho','fxTrem'];
+const IN_PORTS=['fxFilter','fxEcho','fxTrem','master','scope'];
+let portOutNode={}, portInNode={}, routeGain={};   // routeGain[out][in] = GainNode (0 or 1)
+let wires=[];                                       // [{out,in}]
 function buildGraph(){
   AC=new (window.AudioContext||window.webkitAudioContext)();
   oscA=AC.createOscillator(); oscB=AC.createOscillator(); oscSub=AC.createOscillator();
   gA=AC.createGain(); gB=AC.createGain(); gSub=AC.createGain(); gNoise=AC.createGain();
-  mix=AC.createGain(); filt=AC.createBiquadFilter(); trem=AC.createGain();
-  ampEnv=AC.createGain(); master=AC.createGain();
+  mix=AC.createGain(); ampEnv=AC.createGain(); master=AC.createGain();
   anaMaster=AC.createAnalyser(); anaA=AC.createAnalyser(); anaB=AC.createAnalyser();
   lfo=AC.createOscillator(); lfoGain=AC.createGain();
-  delay=AC.createDelay(1.0); fbFilter=AC.createBiquadFilter(); fb=AC.createGain(); wet=AC.createGain();
 
   // noise buffer
   const buf=AC.createBuffer(1,AC.sampleRate*2,AC.sampleRate);
   const d=buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
   noiseSrc=AC.createBufferSource(); noiseSrc.buffer=buf; noiseSrc.loop=true;
 
-  filt.type='lowpass'; fbFilter.type='lowpass'; fbFilter.frequency.value=2600;
   anaMaster.fftSize=2048; anaA.fftSize=1024; anaB.fftSize=1024;
   gA.gain.value=.5; gB.gain.value=.42; oscSub.type='square';
   ampEnv.gain.value=0;
 
+  // --- synth source tap: oscillators -> mix -> ampEnv -> srcSynth (clean, no inline FX) ---
   oscA.connect(gA); oscB.connect(gB); oscSub.connect(gSub); noiseSrc.connect(gNoise);
   gA.connect(mix); gB.connect(mix); gSub.connect(mix); gNoise.connect(mix);
   gA.connect(anaA); gB.connect(anaB);
-  mix.connect(filt); filt.connect(trem); trem.connect(ampEnv);
-  ampEnv.connect(master);                 // dry
-  ampEnv.connect(delay);                   // echo send
-  delay.connect(wet); wet.connect(master); // wet return
-  delay.connect(fbFilter); fbFilter.connect(fb); fb.connect(delay); // feedback loop
-  lfo.connect(lfoGain);                  // routable modulation tap (pitch or filter)
-  lfoTrem=AC.createGain(); lfo.connect(lfoTrem); // independent tremolo tap
+  mix.connect(ampEnv);
+  lfo.connect(lfoGain); lfoTrem=AC.createGain(); lfo.connect(lfoTrem);
 
-  // Master output topology:
-  //  visBus -> scope + WAV recorder. Hears EVERYTHING (synth, file, mic).
-  //  spkBus -> speakers. Hears synth + file, plus mic ONLY when monitoring (feedback guard).
-  //  outBus = master Output knob. BOTH buses pass through it, so one knob scales
-  //           what you hear, what the light show sees, and what you record, together.
-  outBus=AC.createGain();
-  visBus=AC.createGain();
-  spkBus=AC.createGain();
+  // --- effect circuits, each an independent in->out block ---
+  // FILTER circuit
+  filt=AC.createBiquadFilter(); filt.type='lowpass';
+  const fFilterIn=AC.createGain(), fFilterOut=AC.createGain();
+  fFilterIn.connect(filt); filt.connect(fFilterOut);
+  // ECHO circuit (tape delay with damped feedback)
+  delay=AC.createDelay(1.0); fbFilter=AC.createBiquadFilter(); fbFilter.type='lowpass'; fbFilter.frequency.value=2600;
+  fb=AC.createGain(); wet=AC.createGain();
+  const fEchoIn=AC.createGain(), fEchoOut=AC.createGain();
+  fEchoIn.connect(fEchoOut);                 // dry through
+  fEchoIn.connect(delay); delay.connect(wet); wet.connect(fEchoOut);
+  delay.connect(fbFilter); fbFilter.connect(fb); fb.connect(delay);
+  // TREMOLO circuit
+  trem=AC.createGain();
+  const fTremIn=AC.createGain(), fTremOut=AC.createGain();
+  fTremIn.connect(trem); trem.connect(fTremOut);
+
+  // --- source taps ---
+  const srcSynth=AC.createGain(); ampEnv.connect(srcSynth);
+  const srcVoice=AC.createGain(); srcVoice.gain.value=2.5; // makeup gain: raw mic is several x below synth osc level
+  const srcFile=AC.createGain();
+
+  // --- master + scope destinations ---
+  outBus=AC.createGain(); visBus=AC.createGain(); spkBus=AC.createGain();
   visBus.connect(outBus); spkBus.connect(outBus);
-  outBus.connect(AC.destination);       // speakers, scaled by master Output
-  outBus.connect(anaMaster);            // scope + recorder tap, same post-master signal
-  master.connect(spkBus);               // synth -> speakers (and via outBus -> scope/recorder)
+  // gentle master limiter: a transparent peak catcher, NOT a leveler. High threshold and
+  // fast release so a steady source (like a live mic's room noise) does not duck the mix.
+  masterLimiter=AC.createDynamicsCompressor();
+  masterLimiter.threshold.value=-1; masterLimiter.knee.value=0;
+  masterLimiter.ratio.value=20; masterLimiter.attack.value=0.002; masterLimiter.release.value=0.05;
+  outBus.connect(masterLimiter);
+  masterLimiter.connect(AC.destination);   // speakers (limited)
+  masterLimiter.connect(anaMaster);        // scope + recorder tap (limited, matches what you hear)
+  const masterIn=AC.createGain(), scopeIn=AC.createGain();
+  masterIn.connect(spkBus);                  // master destination -> speakers + recorder
+  scopeIn.connect(visBus);                   // scope destination -> light show + recorder only
+  // (X-Y analysers are fed per-source below, with X and Y from different points so each
+  //  source draws an open Lissajous figure rather than a flat diagonal)
 
-  // microphone path: mic -> micGainNode -> micFilt. Always reaches the scope/recorder (visBus),
-  // reaches the speakers only via micMonGain -> spkBus when Monitor is on (feedback guard).
+  // microphone path: micSrc -> micTrim (input gain) -> micGainNode (on/off + level) -> micFilt -> srcVoice
+  micTrim=AC.createGain(); micTrim.gain.value=1;
   micGainNode=AC.createGain(); micGainNode.gain.value=0;
   micFilt=AC.createBiquadFilter(); micFilt.type='lowpass'; micFilt.frequency.value=12000;
-  micMonGain=AC.createGain(); micMonGain.gain.value=0;
-  micGainNode.connect(micFilt);
-  micFilt.connect(visBus);              // light show + recording always react to voice
-  micFilt.connect(delay);               // voice through the echo tank
-  micFilt.connect(anaA); micFilt.connect(anaB); // voice participates in X-Y figure
-  micFilt.connect(micMonGain); micMonGain.connect(spkBus); // optional speaker monitor
+  micMonGain=AC.createGain(); micMonGain.gain.value=0; // legacy monitor node, unused under patch routing
+  micTrim.connect(micGainNode); micGainNode.connect(micFilt); micFilt.connect(srcVoice);
+  // X-Y: X from the live signal, Y from a short delay so a mono source opens into a figure
+  const voiceXY=AC.createDelay(0.05); voiceXY.delayTime.value=0.007;
+  micFilt.connect(anaA); micFilt.connect(voiceXY); voiceXY.connect(anaB);
 
-  // audio file player: granular grains -> fileGainNode -> fileFilt -> fileTrem -> mix + echo.
-  // fileFilt tracks the Tone controls and the LFO; fileTrem carries the tremolo so the file
-  // gets the same filter/vibrato/wobble/tremolo treatment as the synth voices.
+  // audio file player -> srcFile (granular engine feeds fileGainNode)
+  // chain: grains -> fileGainNode (Level) -> fileTrim (input gain) -> fileFilt -> fileTrem -> srcFile
   fileGainNode=AC.createGain(); fileGainNode.gain.value=0;
+  fileTrim=AC.createGain(); fileTrim.gain.value=1; // input gain / trim, mirrors the mic
   fileFilt=AC.createBiquadFilter(); fileFilt.type='lowpass'; fileFilt.frequency.value=20000;
   fileTrem=AC.createGain(); fileTrem.gain.value=1;
-  fileGainNode.connect(fileFilt); fileFilt.connect(fileTrem);
-  fileTrem.connect(spkBus); fileTrem.connect(delay);
-  fileGainNode.connect(anaA); fileTrem.connect(anaB); // pre/post-filter taps open up the X-Y figure
+  fileGainNode.connect(fileTrim); fileTrim.connect(fileFilt); fileFilt.connect(fileTrem); fileTrem.connect(srcFile);
+  // X-Y: X from the live signal, Y from a short delay so a mono/dense source opens into a figure
+  const fileXY=AC.createDelay(0.05); fileXY.delayTime.value=0.009;
+  fileFilt.connect(anaA); fileFilt.connect(fileXY); fileXY.connect(anaB);
+
+  // --- register ports ---
+  portOutNode={synth:srcSynth, voice:srcVoice, file:srcFile,
+               fxFilter:fFilterOut, fxEcho:fEchoOut, fxTrem:fTremOut};
+  portInNode ={fxFilter:fFilterIn, fxEcho:fEchoIn, fxTrem:fTremIn,
+               master:masterIn, scope:scopeIn};
+
+  // --- build the full routing matrix (all gains start at 0) ---
+  routeGain={};
+  OUT_PORTS.forEach(o=>{ routeGain[o]={};
+    IN_PORTS.forEach(i=>{ if(o===i) return;           // no self-loop
+      const g=AC.createGain(); g.gain.value=0;
+      portOutNode[o].connect(g); g.connect(portInNode[i]);
+      routeGain[o][i]=g;
+    });
+  });
 
   oscA.start(); oscB.start(); oscSub.start(); noiseSrc.start(); lfo.start();
-  started=true; applyAll(); syncDrone();
+  started=true;
+  if(!wires.length) wires=defaultWires();
+  applyWires();
+  applyAll(); syncDrone();
+}
+function defaultWires(){   // reproduces the classic chain: sources -> filter -> echo -> master, all -> scope
+  return [
+    {out:'synth',in:'fxFilter'},{out:'voice',in:'fxFilter'},{out:'file',in:'fxFilter'},
+    {out:'fxFilter',in:'fxEcho'},{out:'fxEcho',in:'master'},
+    {out:'fxEcho',in:'scope'}
+  ];
+}
+function wireKey(w){ return w.out+'>'+w.in; }
+function hasWire(out,inp){ return wires.some(w=>w.out===out&&w.in===inp); }
+function applyWires(){
+  if(!started) return;
+  const t=AC.currentTime, set={};
+  wires.forEach(w=>{ set[wireKey(w)]=1; });
+  OUT_PORTS.forEach(o=>IN_PORTS.forEach(i=>{
+    const g=routeGain[o]&&routeGain[o][i]; if(!g) return;
+    g.gain.setTargetAtTime(set[o+'>'+i]?1:0, t, .02);
+  }));
+  if(typeof drawPatch==='function') drawPatch();
 }
 
 function applyAll(){ applyOsc(); applyBody(); applyMod(); applyFilter(); applyEcho(); applyOut(); applyMasterOut(); applyFile(); }
@@ -381,33 +555,23 @@ function applyMod(){
   if(S.modRoute===1){           // pitch / vibrato (cents)
     lfoGain.gain.value=curFreq*0.06*S.modDepth+2;
     lfoGain.connect(oscA.detune); lfoGain.connect(oscB.detune); lfoGain.connect(oscSub.detune);
-    // (file vibrato is applied per-grain in the granular engine, not via this node)
-  } else if(S.modRoute===2){    // filter wobble (Hz)
+    // (file vibrato is applied per-grain in the granular engine)
+  } else if(S.modRoute===2){    // filter wobble drives the shared FILTER circuit
     lfoGain.gain.value=fCut(S.timbre)*0.9*S.modDepth;
     lfoGain.connect(filt.frequency);
-    if(fileFilt) lfoGain.connect(fileFilt.frequency);  // file filter wobbles too
   }
 
-  // --- tremolo (separate tap so it never fights the routable modulation) ---
+  // --- tremolo drives the shared TREMOLO circuit (fxTrem). Depth set by the Trem switch. ---
   try{lfoTrem.disconnect();}catch(e){}
   trem.gain.cancelScheduledValues(AC.currentTime);
-  if(fileTrem) fileTrem.gain.cancelScheduledValues(AC.currentTime);
-  if(S.tremolo){
-    const d=0.5*S.modDepth;
-    trem.gain.value=1-d; lfoTrem.gain.value=d; lfoTrem.connect(trem.gain);
-    if(fileTrem){ fileTrem.gain.value=1-d; lfoTrem.connect(fileTrem.gain); }  // file tremolos too
-  } else {
-    trem.gain.value=1; if(fileTrem) fileTrem.gain.value=1;
-  }
+  if(S.tremolo){ const d=0.5*S.modDepth; trem.gain.value=1-d; lfoTrem.gain.value=d; lfoTrem.connect(trem.gain); }
+  else { trem.gain.value=1; }
 }
 function applyFilter(){
   if(!started) return;
   filt.type=FILTERS[S.filterMode];
   filt.frequency.setTargetAtTime(fCut(S.timbre),AC.currentTime,.03);
   filt.Q.setTargetAtTime(0.5+S.reso*22, AC.currentTime,.03);
-  if(fileFilt){ fileFilt.type=FILTERS[S.filterMode];
-    fileFilt.frequency.setTargetAtTime(fCut(S.timbre),AC.currentTime,.03);
-    fileFilt.Q.setTargetAtTime(0.5+S.reso*22, AC.currentTime,.03); }
 }
 function applyEcho(){
   if(!started) return;
@@ -416,35 +580,67 @@ function applyEcho(){
   wet.gain.setTargetAtTime(S.dlyMix*0.9, AC.currentTime,.05);
 }
 function applyOut(){
-  if(!started) return;
-  master.gain.setTargetAtTime(mixG(S.vol), AC.currentTime,.04);   // synth channel of the mix
+  if(!started||!portOutNode.synth) return;
+  portOutNode.synth.gain.setTargetAtTime(mixG(S.vol)*1.5, AC.currentTime,.04);   // synth source level (1.5x headroom so the keyer sits forward)
 }
 function applyMasterOut(){
   if(!started||!outBus) return;
-  outBus.gain.setTargetAtTime(mixG(S.masterOut)*1.1, AC.currentTime,.04); // master output: scales sound, light, recording
+  outBus.gain.setTargetAtTime(mixG(S.masterOut)*1.8, AC.currentTime,.04); // master output: default ~unity+, scales sound/light/recording
 }
 
 /* ---------- microphone input ---------- */
+let micKeepAlive=null;
+function micNotice(msg,bad){
+  // visible regardless of clean-screen state: a transient centered banner
+  let el=document.getElementById('micNotice');
+  if(!el){ el=document.createElement('div'); el.id='micNotice';
+    el.style.cssText='position:absolute;top:18px;left:50%;transform:translateX(-50%);z-index:9;'+
+      'font-family:Saira Condensed,sans-serif;font-weight:700;font-size:12px;letter-spacing:.16em;'+
+      'text-transform:uppercase;padding:8px 16px;border-radius:7px;pointer-events:none;'+
+      'border:1px solid #000;box-shadow:0 4px 16px rgba(0,0,0,.5);transition:opacity .4s;opacity:0;';
+    (document.querySelector('.show')||document.body).appendChild(el); }
+  el.textContent=msg;
+  el.style.background=bad?'linear-gradient(180deg,#ff5040,#a01608)':'linear-gradient(180deg,#2c8a3a,#155523)';
+  el.style.color='#fff'; el.style.opacity='1';
+  clearTimeout(el._t); el._t=setTimeout(()=>{ el.style.opacity='0'; }, bad?4200:1800);
+  flash(msg);
+}
 function applyMic(){
   if(!started||!micGainNode) return;
-  micGainNode.gain.setTargetAtTime(S.mic?mixG(S.micGain):0, AC.currentTime,.05);          // mic channel of the mix
-  micMonGain.gain.setTargetAtTime((S.mic&&S.micMon)?mixG(S.micGain):0, AC.currentTime,.05); // monitor to speakers
+  if(micTrim) micTrim.gain.setTargetAtTime(micTrimAmt(S.micInGain), AC.currentTime,.04); // input gain / preamp trim
+  micGainNode.gain.setTargetAtTime(S.mic?mixG(S.micGain):0, AC.currentTime,.05); // voice source level; routing decided by the patch bay
 }
 function enableMic(){
-  if(!started){ flash('POWER ON FIRST'); S.mic=false; renderAll(); return; }
-  if(micSrc){ applyMic(); return; }
-  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ flash('NO MIC SUPPORT'); S.mic=false; renderAll(); return; }
-  flash('REQUESTING MIC…');
-  navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}})
+  // auto power-on so the Mic switch always does something visible
+  if(!started){ if(!S.power){ S.power=true; renderAll(); togglePower(); } else { buildGraph(); } }
+  if(!started){ S.mic=false; renderAll(); micNotice('POWER ON FIRST',true); return; }
+  if(AC.state!=='running') AC.resume();
+  if(micSrc){ applyMic(); micNotice('MIC LIVE'); return; }
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
+    S.mic=false; renderAll();
+    micNotice(window.isSecureContext===false?'MIC NEEDS HTTPS/LOCALHOST':'MIC BLOCKED IN THIS FRAME',true);
+    return;
+  }
+  micNotice('REQUESTING MIC…');
+  navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:false,autoGainControl:false}})
     .then(stream=>{
       micStream=stream;
       micSrc=AC.createMediaStreamSource(stream);
-      micSrc.connect(micGainNode);
-      applyMic(); flash('MIC LIVE');
+      micSrc.connect(micTrim);
+      // Chrome quirk: a MediaStreamSource can stay silent unless the stream is also
+      // attached to a (muted) media element. This keep-alive forces it to flow.
+      try{ micKeepAlive=new Audio(); micKeepAlive.srcObject=stream; micKeepAlive.muted=true;
+           micKeepAlive.play().catch(()=>{}); }catch(e){}
+      if(AC.state!=='running') AC.resume();
+      applyMic(); micNotice('MIC LIVE — patch VOICE to an output if silent');
     })
-    .catch(()=>{ S.mic=false; renderAll(); flash('MIC DENIED'); });
+    .catch(err=>{ S.mic=false; renderAll();
+      const n=err&&err.name;
+      micNotice(n==='NotAllowedError'?'MIC PERMISSION DENIED':
+                n==='NotFoundError'?'NO MICROPHONE FOUND':'MIC ERROR: '+(n||'UNKNOWN'),true);
+    });
 }
-function disableMic(){ applyMic(); flash('MIC OFF'); }
+function disableMic(){ applyMic(); micNotice('MIC OFF'); }
 function toggleMic(){ if(S.mic) enableMic(); else disableMic(); }
 
 /* ---------- uploaded audio file player ---------- */
@@ -456,7 +652,10 @@ let grainTimer=null,readPos=0,nextGrainTime=0,endPending=false;
 const GRAIN=0.12, OVERLAP=2, HOP=GRAIN/OVERLAP;   // 50% overlap, triangular window = clean at unity
 const fileRatio=()=>fRate(S.fileRate);            // tempo multiplier
 const filePitchRatio=()=>Math.pow(2,(S.filePitch-0.5)*2); // +/- one octave, v=0.5 -> unity
-function applyFile(){ if(fileGainNode) fileGainNode.gain.setTargetAtTime(mixG(S.fileLevel), AC.currentTime,.04); } // file channel of the mix
+function applyFile(){ if(!fileGainNode) return;
+  fileGainNode.gain.setTargetAtTime(mixG(S.fileLevel), AC.currentTime,.04);          // file channel level
+  if(fileTrim) fileTrim.gain.setTargetAtTime(micTrimAmt(S.fileInGain), AC.currentTime,.04); // file input gain / trim
+}
 function updateFileBtn(){ if(!playBtn) return;
   playBtn.textContent=filePlaying?'STOP':'PLAY';
   playBtn.classList.toggle('occupied',filePlaying); }
@@ -531,13 +730,13 @@ function startRec(){
     recL.push(new Float32Array(l)); recR.push(new Float32Array(r)); recLen+=l.length;
   };
   recSink=AC.createGain(); recSink.gain.value=0;       // silent sink keeps the node pulling
-  outBus.connect(recProc); recProc.connect(recSink); recSink.connect(AC.destination);
+  masterLimiter.connect(recProc); recProc.connect(recSink); recSink.connect(AC.destination);
   recording=true; updateRecBtn(); flash('● RECORDING');
 }
 function stopRec(){
   if(!recording) return;
   recording=false; updateRecBtn();
-  try{ outBus.disconnect(recProc); }catch(e){}
+  try{ masterLimiter.disconnect(recProc); }catch(e){}
   try{ recProc.disconnect(); }catch(e){}
   try{ recSink.disconnect(); }catch(e){}
   recProc=null; recSink=null;
@@ -710,7 +909,8 @@ function screenChanged(){ syncClean(); renderAll(); applyScreen(); }
 /* ---------- build panels ---------- */
 $('#cSupply').append(
   makeToggle({label:'Power',key:'power',on:togglePower}),
-  makeToggle({label:'Drone',key:'drone',on:syncDrone}));
+  makeToggle({label:'Drone',key:'drone',on:syncDrone}),
+  makeKnob({label:'Master',key:'masterOut',def:.8,on:applyMasterOut,fmt:v=>(v*100|0)}));
 $('#cOsc').append(
   makeKnob({label:'Tune A',key:'tuneA',def:.42,on:tuneAChanged,fmt:v=>fA(v).toFixed(0)+'Hz'}),
   makeKnob({label:'Tune B',key:'tuneB',def:.46,on:applyOsc,fmt:v=>fA(v).toFixed(0)+'Hz'}),
@@ -731,24 +931,24 @@ $('#cMod').append(
   makeToggle({label:'Trem',key:'tremolo',on:applyMod}));
 $('#cTone').append(
   makeSelector({label:'Filter',key:'filterMode',options:['LP','HP','BP'],on:applyFilter}),
-  makeKnob({label:'Timbre',key:'timbre',def:.62,on:applyFilter,fmt:v=>(fCut(v)/1000).toFixed(2)+'k'}),
+  makeKnob({label:'Timbre',key:'timbre',def:.78,on:applyFilter,fmt:v=>(fCut(v)/1000).toFixed(2)+'k'}),
   makeKnob({label:'Reso',key:'reso',def:.20,on:applyFilter,fmt:v=>(0.5+v*22).toFixed(1)+'Q'}),
-  makeKnob({label:'Synth',key:'vol',def:.62,on:applyOut,fmt:v=>(v*100|0)}),
-  makeKnob({label:'Output',key:'masterOut',def:.8,on:applyMasterOut,fmt:v=>(v*100|0)}));
+  makeKnob({label:'Synth',key:'vol',def:.62,on:applyOut,fmt:v=>(v*100|0)}));
 $('#cEcho').append(
   makeKnob({label:'Time',key:'dlyTime',def:.30,on:applyEcho,fmt:v=>((0.04+v*0.66)*1000|0)+'ms'}),
   makeKnob({label:'Feedbk',key:'dlyFb',def:.35,on:applyEcho,fmt:v=>(v*100|0)+'%'}),
   makeKnob({label:'Mix',key:'dlyMix',def:0,on:applyEcho,fmt:v=>(v*100|0)+'%'}));
 $('#cMic').append(
   makeToggle({label:'Mic',key:'mic',on:toggleMic}),
-  makeToggle({label:'Monitor',key:'micMon',on:applyMic}),
-  makeKnob({label:'Level',key:'micGain',def:.55,on:applyMic,fmt:v=>(v*100|0)+'%'}));
+  makeKnob({label:'Gain',key:'micInGain',def:.5,on:applyMic,fmt:micTrimDb}),
+  makeKnob({label:'Level',key:'micGain',def:.6,on:applyMic,fmt:v=>(v*100|0)+'%'}));
 $('#cFile').append(
   makeButton({label:'Source',text:'LOAD',title:'Upload an audio file',on:loadAudioFile}),
   makeButton({label:'Transport',text:'PLAY',title:'Play / stop the loaded file',on:toggleFile,ref:b=>playBtn=b}),
   makeToggle({label:'Loop',key:'fileLoop',on:()=>{}}),
   makeKnob({label:'Speed',key:'fileRate',def:.5,on:()=>{},fmt:v=>fRate(v).toFixed(2)+'x'}),
   makeKnob({label:'Pitch',key:'filePitch',def:.5,on:()=>{},fmt:v=>{const st=Math.round((v-0.5)*24);return (st>0?'+':'')+st+'st';}}),
+  makeKnob({label:'Gain',key:'fileInGain',def:.5,on:applyFile,fmt:micTrimDb}),
   makeKnob({label:'Level',key:'fileLevel',def:.62,on:applyFile,fmt:v=>(v*100|0)+'%'}));
 $('#cRec').append(
   makeButton({label:'Capture',text:'REC',cls:'accent',title:'Record your performance to a file',on:toggleRec,ref:b=>recBtn=b}));
@@ -784,8 +984,10 @@ function buildPatchBank(){
   load.title='Load a patch from a local file'; load.addEventListener('click',loadPatchFile); bank.appendChild(load);
   $('#cPatch').appendChild(bank);
 }
-function snapshot(){ const o={}; ENC.forEach(k=>o[k]=S[k]); return o; }
-function restore(o){ ENC.forEach(k=>{ if(o[k]!=null) S[k]=o[k]; }); syncClean(); renderAll(); applyScreen(); applyAll(); syncDrone(); }
+function snapshot(){ const o={}; ENC.forEach(k=>o[k]=S[k]); o._wires=wires.map(w=>({out:w.out,in:w.in})); return o; }
+function restore(o){ ENC.forEach(k=>{ if(o[k]!=null) S[k]=o[k]; });
+  if(Array.isArray(o._wires)){ wires=o._wires.map(w=>({out:w.out,in:w.in})); if(started) applyWires(); }
+  syncClean(); renderAll(); applyScreen(); applyAll(); syncDrone(); }
 function randomize(){
   const rf=(a,b)=>a+Math.random()*(b-a), ri=n=>Math.floor(Math.random()*n);
   S.tuneA=rf(.15,.7); S.tuneB=rf(.15,.7); S.waveA=ri(4); S.waveB=ri(4);
@@ -815,7 +1017,7 @@ function shareLink(){
 
 /* ---- downloadable local patch file (.json) ---- */
 function savePatchFile(){
-  const data={app:'OSCILLON',by:'M.B. Parks',version:'0.0.4',saved:new Date().toISOString(),patch:snapshot()};
+  const data={app:'OSCILLON',by:'M.B. Parks',version:'0.0.7',saved:new Date().toISOString(),patch:snapshot()};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const url=URL.createObjectURL(blob), a=document.createElement('a');
   const stamp=new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
@@ -1028,6 +1230,136 @@ window.addEventListener('pointermove',e=>{
 window.addEventListener('resize',fitShow);
 new ResizeObserver(fitShow).observe(dock);   // refit when the rack rewraps to more/fewer rows
 resetIdle(); fitShow();
+
+/* ===================================================================
+   PATCH BAY: skeuomorphic wiring UI over the routing matrix
+   =================================================================== */
+const patchbay=$('#patchbay'),patchtab=$('#patchtab'),patchsvg=$('#patchsvg'),patchwrap=$('#patchwrap');
+const WIRE_COLORS={synth:'#ff8a3d',voice:'#6cff8a',file:'#9ad6ff',
+  fxFilter:'#ffd23d',fxEcho:'#c08aff',fxTrem:'#ff6fae'};
+let patchOpen=false, dragFrom=null, liveWire=null;
+function jackEls(){ return [...patchwrap.querySelectorAll('.jack')]; }
+function portOf(el){ return el.getAttribute('data-port'); }       // "out:synth" / "in:master"
+function jackByPort(p){ return patchwrap.querySelector('.jack[data-port="'+p+'"]'); }
+function jackCenter(el){
+  const w=patchwrap.getBoundingClientRect(), r=el.getBoundingClientRect();
+  return { x:r.left-w.left+r.width/2, y:r.top-w.top+r.height/2 };
+}
+function curvePath(a,b){
+  const dx=Math.max(40,Math.abs(b.x-a.x)*0.5), sag=Math.min(60,Math.abs(b.x-a.x)*0.25+18);
+  // cubic with a downward sag, like a hanging cable
+  return `M ${a.x} ${a.y} C ${a.x+dx} ${a.y+sag}, ${b.x-dx} ${b.y+sag}, ${b.x} ${b.y}`;
+}
+function drawPatch(){
+  if(!patchsvg) return;
+  while(patchsvg.firstChild) patchsvg.removeChild(patchsvg.firstChild);
+  // existing wires
+  wires.forEach((w,idx)=>{
+    const oe=jackByPort('out:'+w.out), ie=jackByPort('in:'+w.in);
+    if(!oe||!ie) return;
+    const a=jackCenter(oe), b=jackCenter(ie);
+    const col=WIRE_COLORS[w.out]||'#cdbf9a';
+    const shadow=mkPath(curvePath(a,b),'rgba(0,0,0,.45)',6,'none'); patchsvg.appendChild(shadow);
+    const path=mkPath(curvePath(a,b),col,3.2,'none');
+    path.style.cursor='pointer'; path.style.pointerEvents='stroke';
+    path.addEventListener('click',e=>{ e.stopPropagation(); removeWire(idx); });
+    path.addEventListener('pointerdown',e=>e.stopPropagation());
+    patchsvg.appendChild(path);
+    // plug highlights
+    [a,b].forEach(p=>{ const c=mkCircle(p.x,p.y,4,col); patchsvg.appendChild(c); });
+  });
+  // live drag wire
+  if(liveWire){
+    const col=WIRE_COLORS[dragFrom&&dragFrom.port.split(':')[1]]||'#ffd27a';
+    patchsvg.appendChild(mkPath(curvePath(liveWire.a,liveWire.b),col,3,'6 5'));
+  }
+  // mark connected jacks
+  jackEls().forEach(el=>{
+    const p=portOf(el), side=p.split(':')[0], name=p.split(':')[1];
+    const used = side==='out' ? wires.some(w=>w.out===name) : wires.some(w=>w.in===name);
+    el.classList.toggle('connected',used);
+  });
+}
+function mkPath(d,stroke,w,dash){
+  const p=document.createElementNS('http://www.w3.org/2000/svg','path');
+  p.setAttribute('d',d); p.setAttribute('fill','none'); p.setAttribute('stroke',stroke);
+  p.setAttribute('stroke-width',w); p.setAttribute('stroke-linecap','round');
+  if(dash&&dash!=='none') p.setAttribute('stroke-dasharray',dash);
+  return p;
+}
+function mkCircle(x,y,r,fill){
+  const c=document.createElementNS('http://www.w3.org/2000/svg','circle');
+  c.setAttribute('cx',x); c.setAttribute('cy',y); c.setAttribute('r',r); c.setAttribute('fill',fill);
+  return c;
+}
+function canConnect(pa,pb){               // one must be out:, the other in:
+  const sa=pa.split(':')[0], sb=pb.split(':')[0];
+  return (sa==='out'&&sb==='in')||(sa==='in'&&sb==='out');
+}
+function orderConn(pa,pb){                 // returns {out,in} names
+  const a=pa.split(':'), b=pb.split(':');
+  const o=a[0]==='out'?a:b, i=a[0]==='in'?a:b;
+  return {out:o[1], in:i[1]};
+}
+function addWire(pa,pb){
+  if(!canConnect(pa,pb)){ flash('CONNECT A SOURCE-OUT TO AN EFFECT/OUTPUT-IN'); return; }
+  const c=orderConn(pa,pb);
+  if(hasWire(c.out,c.in)){ return; }       // already wired
+  wires.push(c); applyWires(); flash('PATCHED '+c.out.toUpperCase()+' -> '+c.in.toUpperCase());
+}
+function removeWire(idx){ wires.splice(idx,1); applyWires(); flash('WIRE CUT'); }
+function clearArmed(){ jackEls().forEach(el=>el.classList.remove('armed')); }
+
+let clickArm=null, dragMoved=false;
+jackEls().forEach(el=>{
+  // drag to connect
+  el.addEventListener('pointerdown',e=>{
+    e.preventDefault(); e.stopPropagation();
+    dragFrom={el,port:portOf(el)}; el.classList.add('armed');
+    const c=jackCenter(el); liveWire={a:c,b:c}; drawPatch();
+  });
+  // click-click to connect
+  el.addEventListener('click',e=>{
+    e.stopPropagation();
+    if(clickArm && clickArm!==el){
+      addWire(portOf(clickArm),portOf(el));
+      clickArm.classList.remove('armed'); clickArm=null; clearArmed();
+    } else if(!dragMoved){
+      if(clickArm===el){ clickArm=null; el.classList.remove('armed'); }
+      else { clearArmed(); clickArm=el; el.classList.add('armed'); }
+    }
+  });
+});
+patchwrap.addEventListener('pointermove',e=>{
+  if(!dragFrom) return;
+  dragMoved=true;
+  const w=patchwrap.getBoundingClientRect();
+  liveWire.b={x:e.clientX-w.left, y:e.clientY-w.top};
+  // snap highlight to a hovered jack
+  const tgt=document.elementFromPoint(e.clientX,e.clientY);
+  jackEls().forEach(j=>{ if(j!==dragFrom.el) j.classList.toggle('armed', j===tgt && tgt.classList.contains('jack')); });
+  drawPatch();
+});
+window.addEventListener('pointerup',e=>{
+  if(!dragFrom) return;
+  const tgt=document.elementFromPoint(e.clientX,e.clientY);
+  if(tgt&&tgt.classList&&tgt.classList.contains('jack')&&tgt!==dragFrom.el){
+    addWire(dragFrom.port,portOf(tgt));
+  }
+  dragFrom.el.classList.remove('armed'); clearArmed();
+  dragFrom=null; liveWire=null; drawPatch();
+  setTimeout(()=>{dragMoved=false;},0);
+});
+
+function openPatch(){ patchbay.classList.add('open'); patchtab.style.opacity='0'; patchtab.style.pointerEvents='none'; patchOpen=true; setTimeout(drawPatch,60); }
+function closePatch(){ patchbay.classList.remove('open'); patchtab.style.opacity=''; patchtab.style.pointerEvents=''; patchOpen=false; clickArm=null; clearArmed(); }
+patchtab.addEventListener('click',openPatch);
+$('#patchclose').addEventListener('click',closePatch);
+$('#patchDefault').addEventListener('click',()=>{ wires=defaultWires(); applyWires(); flash('DEFAULT PATCH'); });
+$('#patchClear').addEventListener('click',()=>{ wires=[]; applyWires(); flash('PATCH CLEARED'); });
+patchwrap.addEventListener('click',()=>{ if(clickArm){ clickArm.classList.remove('armed'); clickArm=null; } });
+new ResizeObserver(()=>{ if(patchOpen) drawPatch(); }).observe(patchwrap);
+window.addEventListener('resize',()=>{ if(patchOpen) drawPatch(); });
 
 /* ---------- load patch from share link ---------- */
 syncClean(); applyScreen();

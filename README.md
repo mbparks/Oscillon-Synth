@@ -16,7 +16,7 @@ Everything lives in one HTML file. There is no build step, no dependencies, and 
 - LFO routable to pitch (vibrato) or filter (wobble), plus an amplitude tremolo switch.
 - Tape-style echo tank with adjustable time, feedback, and mix, and a darkening lowpass in the feedback path.
 - Monophonic keyer (on-screen or computer keyboard) with last-note priority.
-- Three-channel mix with a shared fader curve, so the synth, microphone, and audio file balance against each other predictably, plus a master Output that scales the whole blend (sound, light show, and recording together).
+- Three-channel mix with a shared fader curve, so the synth, microphone, and audio file balance against each other predictably. Each input has its own gain trim, a master Output scales the whole blend (sound, light show, and recording together), and a transparent master limiter guards against clipping when sources stack.
 
 ### Light show
 - Full-screen CRT scope with phosphor persistence, scanlines, vignette, and a subtle analog beam jitter.
@@ -25,8 +25,14 @@ Everything lives in one HTML file. There is no build step, no dependencies, and 
 - Trace color tracks both pitch and timbre, so playing up the keyboard sweeps the color.
 - Seven color palettes (Phosphor, Amber, Ice Blue, Spectra, Sunset, Violet, Mono).
 
+### Patch bay
+- A skeuomorphic patch bay slides in from the right edge. It governs the real audio routing: each source (synth, voice, file) is silent until you wire it through to an output.
+- Three source jacks, three effect circuits (filter, echo, tremolo) each with an input and output jack, and two destination jacks (Master Out for the speakers and recording, Light Show to drive the visuals only).
+- Wire by dragging from one jack to another, or click one jack then another. Click a wire to cut it. Effects can be chained (for example file into filter, filter into echo, echo into master).
+- DEFAULT restores the classic chain (all sources through filter and echo to the output); CLEAR ALL unplugs everything. Wiring is saved in patch slots and patch files.
+
 ### Inputs
-- **Microphone.** Live voice or instrument input that feeds the filter, echo, light show, and recorder. A separate Monitor switch (off by default) guards against feedback.
+- **Microphone.** Live voice or instrument input. Its routing (to effects, to the speakers, to the light show) is set in the patch bay like any other source.
 - **Audio file.** Upload any audio file the browser can decode. It plays through the full processing chain (filter, LFO, tremolo, and echo), so you can filter-sweep, add vibrato or wobble, and drench an existing track in tape echo while it drives the visuals. A granular playback engine provides independent Speed and Pitch controls: Speed sets tempo from 0.25x to 4x, and Pitch shifts up or down a full octave without changing the tempo. The file also appears in the X-Y Lissajous display alongside the synth. Supports looping and level control.
 
 ### Output
@@ -69,6 +75,7 @@ Then open `http://localhost:8000/oscillon-synth.html`.
 | --- | --- | --- |
 | Supply | Power | Energizes the audio engine |
 | Supply | Drone | Continuous tone without holding a key |
+| Supply | Master | Master output level (scales sound, light, and recording) |
 | Oscillators | Tune A / B | Pitch of each oscillator |
 | Oscillators | Wave A / B | Waveform per oscillator |
 | Body | Sub | Level of the octave-down sub-oscillator |
@@ -79,15 +86,16 @@ Then open `http://localhost:8000/oscillon-synth.html`.
 | Modulation | Trem | Amplitude tremolo |
 | Tone & Out | Filter | Filter mode (LP, HP, BP) |
 | Tone & Out | Timbre / Reso | Filter cutoff and resonance |
-| Tone & Out | Synth / Output | Synth channel level and master output (scales sound, light, and recording) |
+| Tone & Out | Synth | Synth channel level (master is the Master knob in Supply) |
 | Echo Tank | Time / Feedbk / Mix | Tape-echo delay parameters |
-| Voice In | Mic / Monitor / Level | Microphone input, speaker monitor, and level |
-| Audio File | Source / Transport / Loop / Speed / Pitch / Level | Load, play/stop, loop, tempo (0.25x-4x), independent pitch (+/- 1 octave), and level |
+| Voice In | Mic / Gain / Level | Microphone on/off, input gain (-24 to +36 dB), and channel level (routing set in the patch bay) |
+| Audio File | Source / Transport / Loop / Speed / Pitch / Gain / Level | Load, play/stop, loop, tempo (0.25x-4x), independent pitch (+/- 1 octave), input gain, and channel level |
 | Recorder | Capture | Start/stop recording and download the result |
 | Screen | Mode | Display mode |
 | Screen | Palette | Color scheme |
 | Screen | Clean / Grid / Text / LEDs | Screen-element visibility |
 | Patch | RND / 1-4 / LINK / SAVE / LOAD | Randomize, slots, share link, save file, load file |
+| Patch Bay | (right-edge tab) | Drag or click jack-to-jack to route sources through effects to the outputs |
 
 ### Keyboard
 
