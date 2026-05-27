@@ -1,0 +1,77 @@
+{
+  "app": "OSCILLON",
+  "by": "M.B. Parks",
+  "version": "0.0.7",
+  "saved": "2026-05-27T02:44:28.594Z",
+  "patch": {
+    "drone": false,
+    "tremolo": true,
+    "tuneA": 0.376898236172712,
+    "tuneB": 0.6832586318845154,
+    "waveA": 0,
+    "waveB": 2,
+    "sub": 0.562604106690591,
+    "noise": 0.1441706676754129,
+    "atk": 0.19278763801562043,
+    "dec": 0.53017902547347,
+    "sus": 0.8712315556476056,
+    "rel": 0.6918219381877128,
+    "lfoRate": 0.6708961827460723,
+    "modDepth": 0.29826156641478363,
+    "modRoute": 0,
+    "filterMode": 0,
+    "timbre": 0.5586179268460572,
+    "reso": 0.05336313508467718,
+    "vol": 0.62,
+    "masterOut": 0.8,
+    "dlyTime": 0.24866040285446656,
+    "dlyFb": 0.3264747875293447,
+    "dlyMix": 0.4576311201540586,
+    "micInGain": 0.5,
+    "micGain": 0.6,
+    "fileInGain": 0.5,
+    "fileLevel": 0.62,
+    "fileLoop": true,
+    "fileRate": 0.5,
+    "filePitch": 0.5,
+    "scopeMode": 3,
+    "palette": 2,
+    "grid": true,
+    "text": true,
+    "leds": true,
+    "_wires": [
+      {
+        "out": "synth",
+        "in": "fxFilter"
+      },
+      {
+        "out": "voice",
+        "in": "fxFilter"
+      },
+      {
+        "out": "file",
+        "in": "fxFilter"
+      },
+      {
+        "out": "fxFilter",
+        "in": "fxEcho"
+      },
+      {
+        "out": "fxEcho",
+        "in": "fxTrem"
+      },
+      {
+        "out": "fxTrem",
+        "in": "fxTrem"
+      },
+      {
+        "out": "fxTrem",
+        "in": "master"
+      },
+      {
+        "out": "fxTrem",
+        "in": "scope"
+      }
+    ]
+  }
+}
